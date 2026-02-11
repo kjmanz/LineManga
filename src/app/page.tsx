@@ -226,7 +226,7 @@ export default function Home() {
       <header className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-panel backdrop-blur">
         <h1 className="text-2xl font-black text-slate-900 md:text-3xl">LINE投稿 漫画化エージェント</h1>
         <p className="mt-2 text-sm text-slate-600">
-          LINE投稿文から「4コマ(1080x1080)」と「A4縦(2480x3508)」を同時生成します。
+          LINE投稿文から「4コマ(1080x1080)」と「A4縦1ページ漫画(2480x3508)」を同時生成します。
         </p>
       </header>
 

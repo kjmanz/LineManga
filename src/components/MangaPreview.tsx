@@ -23,7 +23,7 @@ export function MangaPreview({ result, generatedImageCount, onBack, onOpenRevise
     <section className="rounded-2xl bg-white p-6 shadow-panel">
       <h2 className="text-xl font-bold text-slate-900">STEP4 漫画生成プレビュー</h2>
       <p className="mt-2 text-sm text-slate-600">
-        4コマとA4縦を確認し、必要なら修正再生成に進みます。
+        4コマとA4縦1ページ漫画を確認し、必要なら修正再生成に進みます。
       </p>
 
       <p className="mt-3 inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
@@ -44,14 +44,14 @@ export function MangaPreview({ result, generatedImageCount, onBack, onOpenRevise
         </article>
 
         <article className="rounded-xl border border-slate-200 p-4">
-          <h3 className="font-semibold text-slate-900">A4縦 (2480x3508)</h3>
-          <img src={result.a4ImageDataUrl} alt="A4漫画" className="mt-3 w-full rounded-lg border" />
+          <h3 className="font-semibold text-slate-900">A4縦1ページ漫画 (2480x3508)</h3>
+          <img src={result.a4ImageDataUrl} alt="A4縦1ページ漫画" className="mt-3 w-full rounded-lg border" />
           <button
             type="button"
             onClick={() => downloadDataUrl(result.a4ImageDataUrl, "manga-a4.png")}
             className="mt-3 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white"
           >
-            A4をダウンロード
+            A4縦1ページ漫画をダウンロード
           </button>
         </article>
       </div>
