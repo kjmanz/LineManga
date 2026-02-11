@@ -31,8 +31,15 @@ class HttpError extends Error {
 
 type MangaLayout = "four-panel-square" | "a4-vertical";
 
-type BatchStartResponse = {
+type BatchJobStart = {
   batchName: string;
+  requestCount: number;
+  patternIds?: string[];
+};
+
+type BatchStartResponse = {
+  batchName?: string | null;
+  batchJobs?: BatchJobStart[];
   requestCount: number;
   pollIntervalMs?: number;
 };
@@ -221,9 +228,40 @@ export default function Home() {
     clearBatchMessages();
   };
 
-  const pollBatchUntilDone = async (batchName: string, fallbackIntervalMs = 5000) => {
+  const toBatchJobs = (started: BatchStartResponse): BatchJobStart[] => {
+    const jobs = Array.isArray(started.batchJobs) ? started.batchJobs : [];
+    if (jobs.length > 0) {
+      return jobs
+        .filter((job) => typeof job.batchName === "string" && job.batchName.trim().length > 0)
+        .map((job) => ({
+          ...job,
+          batchName: job.batchName.trim()
+        }));
+    }
+    const singleBatchName = started.batchName?.trim();
+    if (!singleBatchName) {
+      return [];
+    }
+    return [
+      {
+        batchName: singleBatchName,
+        requestCount: started.requestCount
+      }
+    ];
+  };
+
+  const pollBatchJobsUntilDone = async (
+    batchJobs: BatchJobStart[],
+    fallbackIntervalMs = BATCH_POLL_INTERVAL_MS
+  ) => {
+    if (batchJobs.length === 0) {
+      throw new Error("バッチジョブ情報が不足しています。Workerを最新にデプロイしてください。");
+    }
+
     const startedAt = Date.now();
     let warned = false;
+    const pending = new Map(batchJobs.map((job) => [job.batchName, job] as const));
+    const completed = new Map<string, BatchStatusResponse>();
 
     for (let attempt = 0; ; attempt += 1) {
       const elapsedMs = Date.now() - startedAt;
@@ -231,20 +269,54 @@ export default function Home() {
         throw new Error("Batchモードは10分でタイムアウトしました。通常モードに切り替えるか時間をおいて再試行してください。");
       }
 
-      const status = await postJson<BatchStatusResponse>("/api/batch-status", { batchName });
-      if (status.done) {
-        if (status.error) {
-          throw new Error(status.error);
+      const pendingBatchNames = Array.from(pending.keys());
+      const statuses = await Promise.all(
+        pendingBatchNames.map((batchName) =>
+          postJson<BatchStatusResponse>("/api/batch-status", {
+            batchName
+          })
+        )
+      );
+
+      let pollIntervalMs = fallbackIntervalMs;
+      const stateCounts = new Map<string, number>();
+
+      for (let index = 0; index < statuses.length; index += 1) {
+        const status = statuses[index];
+        const batchName = pendingBatchNames[index];
+        if (status.done) {
+          if (status.error) {
+            throw new Error(`${batchName}: ${status.error}`);
+          }
+          completed.set(batchName, status);
+          pending.delete(batchName);
+          continue;
         }
-        return status;
+
+        const stateText = status.state || "RUNNING";
+        stateCounts.set(stateText, (stateCounts.get(stateText) ?? 0) + 1);
+        if (typeof status.pollIntervalMs === "number" && status.pollIntervalMs > 0) {
+          pollIntervalMs = Math.min(pollIntervalMs, status.pollIntervalMs);
+        }
       }
 
-      const stateText = status.state || "RUNNING";
+      if (completed.size === batchJobs.length) {
+        return batchJobs
+          .map((job) => completed.get(job.batchName))
+          .filter((status): status is BatchStatusResponse => Boolean(status));
+      }
+
       const elapsedSec = Math.floor(elapsedMs / 1000);
       const elapsedMin = Math.floor(elapsedSec / 60);
       const restSec = `${elapsedSec % 60}`.padStart(2, "0");
+      const stateText =
+        stateCounts.size > 0
+          ? Array.from(stateCounts.entries())
+              .map(([state, count]) => `${state}x${count}`)
+              .join(", ")
+          : "RUNNING";
       setBatchStatusMessage(
-        `バッチ処理中: ${stateText} (${attempt + 1}回目の確認 / 経過 ${elapsedMin}:${restSec})`
+        `バッチ処理中: ${completed.size}/${batchJobs.length}完了 / ${stateText} (${attempt + 1}回目の確認 / 経過 ${elapsedMin}:${restSec})`
       );
 
       if (!warned && elapsedMs >= BATCH_WARNING_MS) {
@@ -252,7 +324,7 @@ export default function Home() {
         setBatchWarningMessage("Batch処理が3分を超えました。混雑中の可能性があります。");
       }
 
-      await wait(status.pollIntervalMs ?? fallbackIntervalMs);
+      await wait(pollIntervalMs);
     }
   };
 
@@ -364,12 +436,13 @@ export default function Home() {
           ownerReferenceDataUrl,
           wifeReferenceDataUrl
         });
-        setBatchStatusMessage(`バッチ作成完了: ${started.batchName}`);
-        const completed = await pollBatchUntilDone(
-          started.batchName,
+        const batchJobs = toBatchJobs(started);
+        setBatchStatusMessage(`バッチ作成完了: ${batchJobs.length}ジョブ`);
+        const completedStatuses = await pollBatchJobsUntilDone(
+          batchJobs,
           started.pollIntervalMs ?? BATCH_POLL_INTERVAL_MS
         );
-        const results = completed.results ?? [];
+        const results = completedStatuses.flatMap((status) => status.results ?? []);
         const generated = toSingleGenerationResult(results, selectedPattern.id);
         setGeneration(generated);
         setGenerationByPatternId({ [selectedPattern.id]: generated });
@@ -425,12 +498,13 @@ export default function Home() {
         ownerReferenceDataUrl,
         wifeReferenceDataUrl
       });
-      setBatchStatusMessage(`全構成案バッチ作成完了: ${started.batchName}`);
-      const completed = await pollBatchUntilDone(
-        started.batchName,
+      const batchJobs = toBatchJobs(started);
+      setBatchStatusMessage(`全構成案バッチ作成完了: ${batchJobs.length}ジョブ`);
+      const completedStatuses = await pollBatchJobsUntilDone(
+        batchJobs,
         started.pollIntervalMs ?? BATCH_POLL_INTERVAL_MS
       );
-      const results = completed.results ?? [];
+      const results = completedStatuses.flatMap((status) => status.results ?? []);
       const map = toPatternGenerationMap(results);
       const generatedIds = Object.keys(map);
       if (generatedIds.length === 0) {
@@ -479,12 +553,13 @@ export default function Home() {
           previousFourPanelImageDataUrl: generation.fourPanelImageDataUrl,
           previousA4ImageDataUrl: generation.a4ImageDataUrl
         });
-        setBatchStatusMessage(`修正バッチ作成完了: ${started.batchName}`);
-        const completed = await pollBatchUntilDone(
-          started.batchName,
+        const batchJobs = toBatchJobs(started);
+        setBatchStatusMessage(`修正バッチ作成完了: ${batchJobs.length}ジョブ`);
+        const completedStatuses = await pollBatchJobsUntilDone(
+          batchJobs,
           started.pollIntervalMs ?? BATCH_POLL_INTERVAL_MS
         );
-        const results = completed.results ?? [];
+        const results = completedStatuses.flatMap((status) => status.results ?? []);
         const revised = toSingleGenerationResult(results, selectedPattern.id);
         setRevisedGeneration(revised);
         setGeneratedImageCount((count) => count + results.length);

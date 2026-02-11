@@ -116,6 +116,41 @@ type GeminiBatchOperation = {
   };
 };
 
+type GeminiFileResource = {
+  name?: string;
+  mimeType?: string;
+  mime_type?: string;
+  state?: string;
+  downloadUri?: string;
+  download_uri?: string;
+  error?: {
+    message?: string;
+  };
+};
+
+type GeminiFileUploadResponse = {
+  file?: GeminiFileResource;
+  error?: {
+    message?: string;
+  };
+};
+
+type GeminiBatchFileRequest = {
+  key: string;
+  request: Record<string, unknown>;
+};
+
+type GeminiBatchFileResponse = {
+  key?: string;
+  response?: GeminiResponse | { response?: GeminiResponse };
+  error?: {
+    message?: string;
+  };
+  status?: {
+    message?: string;
+  };
+};
+
 type BatchImageResult = {
   patternId: string;
   patternType: PatternType;
@@ -127,10 +162,15 @@ type BatchImageResult = {
 
 const API_ROOT = "https://generativelanguage.googleapis.com/v1beta";
 const API_BASE = `${API_ROOT}/models`;
+const FILE_API_BASE = `${API_ROOT}/files`;
+const FILE_UPLOAD_API = "https://generativelanguage.googleapis.com/upload/v1beta/files";
 const DEFAULT_TEXT_MODEL = "gemini-3-flash-preview";
 const DEFAULT_IMAGE_MODEL = "gemini-3-pro-image-preview";
 const MODEL_LIST_CACHE_MS = 1000 * 60 * 10;
 const BATCH_POLL_INTERVAL_MS = 5000;
+const BATCH_PATTERNS_PER_JOB = 1;
+const BATCH_FILE_MIME_TYPE = "application/jsonl";
+const BATCH_KEY_PREFIX = "line-manga";
 const BATCH_TERMINAL_KEYWORDS = ["SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED"];
 const IMAGE_MODEL_ALIASES: Record<string, string> = {
   "nano-banana-pro": DEFAULT_IMAGE_MODEL,
@@ -702,7 +742,7 @@ const generateMangaImage = async ({
   return extractImage(response);
 };
 
-const requestGeminiBatchGenerate = async (
+const requestGeminiBatchGenerateInline = async (
   env: Env,
   model: string,
   requests: GeminiBatchInlinedRequest[],
@@ -740,10 +780,182 @@ const requestGeminiBatchGenerate = async (
   return data;
 };
 
+const requestGeminiBatchGenerateWithFile = async (
+  env: Env,
+  model: string,
+  fileName: string,
+  displayName: string
+) => {
+  if (!env.GEMINI_API_KEY) {
+    throw new Error("Cloudflare Worker secret `GEMINI_API_KEY` が未設定です。");
+  }
+  const modelId = normalizeModelId(model);
+
+  const response = await fetch(`${API_BASE}/${modelId}:batchGenerateContent?key=${env.GEMINI_API_KEY}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      batch: {
+        displayName,
+        inputConfig: {
+          mimeType: BATCH_FILE_MIME_TYPE,
+          fileName: normalizeFileName(fileName)
+        }
+      }
+    })
+  });
+
+  const data = (await response.json()) as GeminiBatchOperation;
+  if (!response.ok) {
+    throw new Error(data.error?.message ?? "Gemini Batch API(file input)呼び出しに失敗しました。");
+  }
+  if (!data.name) {
+    throw new Error("Batchジョブ名の取得に失敗しました。");
+  }
+  return data;
+};
+
 const normalizeBatchName = (value: string) => {
   const trimmed = value.trim().replace(/^https?:\/\/[^/]+\//, "").replace(/^\/+/, "");
   const unversioned = trimmed.replace(/^v1beta\//, "");
   return unversioned.startsWith("batches/") ? unversioned : trimmed;
+};
+
+const normalizeFileName = (value: string) => {
+  const trimmed = value.trim().replace(/^https?:\/\/[^/]+\//, "").replace(/^\/+/, "");
+  const unversioned = trimmed.replace(/^v1beta\//, "");
+  return unversioned.startsWith("files/") ? unversioned : trimmed;
+};
+
+const readJsonSafely = async <T>(response: Response): Promise<T | null> => {
+  try {
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  }
+};
+
+const uploadBatchInputFile = async (env: Env, jsonlContent: string, displayName: string) => {
+  if (!env.GEMINI_API_KEY) {
+    throw new Error("Cloudflare Worker secret `GEMINI_API_KEY` が未設定です。");
+  }
+
+  const fileBytes = new TextEncoder().encode(jsonlContent);
+  const startResponse = await fetch(`${FILE_UPLOAD_API}?key=${env.GEMINI_API_KEY}`, {
+    method: "POST",
+    headers: {
+      "X-Goog-Upload-Protocol": "resumable",
+      "X-Goog-Upload-Command": "start",
+      "X-Goog-Upload-Header-Content-Length": `${fileBytes.byteLength}`,
+      "X-Goog-Upload-Header-Content-Type": BATCH_FILE_MIME_TYPE,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      file: {
+        displayName: `${displayName}.jsonl`
+      }
+    })
+  });
+
+  const startData = await readJsonSafely<GeminiFileUploadResponse>(startResponse);
+  if (!startResponse.ok) {
+    throw new Error(startData?.error?.message ?? "Batch入力ファイルのアップロード開始に失敗しました。");
+  }
+
+  const uploadUrl = startResponse.headers.get("x-goog-upload-url");
+  if (!uploadUrl) {
+    throw new Error("Batch入力ファイルのアップロードURL取得に失敗しました。");
+  }
+
+  const uploadResponse = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      "X-Goog-Upload-Command": "upload, finalize",
+      "X-Goog-Upload-Offset": "0",
+      "Content-Type": BATCH_FILE_MIME_TYPE
+    },
+    body: fileBytes
+  });
+
+  const uploadData = await readJsonSafely<GeminiFileUploadResponse | GeminiFileResource>(uploadResponse);
+  if (!uploadResponse.ok) {
+    const message =
+      (uploadData as GeminiFileUploadResponse | null)?.error?.message ??
+      (uploadData as GeminiFileResource | null)?.error?.message;
+    throw new Error(message ?? "Batch入力ファイルのアップロードに失敗しました。");
+  }
+
+  const uploadedFile =
+    (uploadData as GeminiFileUploadResponse | null)?.file ?? (uploadData as GeminiFileResource | null);
+  if (!uploadedFile?.name) {
+    throw new Error("Batch入力ファイル名の取得に失敗しました。");
+  }
+
+  return normalizeFileName(uploadedFile.name);
+};
+
+const requestGeminiFile = async (env: Env, fileName: string): Promise<GeminiFileResource> => {
+  if (!env.GEMINI_API_KEY) {
+    throw new Error("Cloudflare Worker secret `GEMINI_API_KEY` が未設定です。");
+  }
+  const normalizedFileName = normalizeFileName(fileName);
+  if (!normalizedFileName.startsWith("files/")) {
+    throw new Error("fileName は `files/...` 形式で指定してください。");
+  }
+
+  const response = await fetch(
+    `${FILE_API_BASE}/${normalizedFileName.slice("files/".length)}?key=${env.GEMINI_API_KEY}`
+  );
+  const data = await readJsonSafely<GeminiFileResource | { file?: GeminiFileResource }>(response);
+  const file =
+    data && typeof data === "object" && "file" in data ? (data as { file?: GeminiFileResource }).file : data;
+  if (!response.ok || !file) {
+    const message =
+      data && typeof data === "object" && "error" in data
+        ? ((data as GeminiFileResource).error?.message ?? "Batch結果ファイル情報の取得に失敗しました。")
+        : "Batch結果ファイル情報の取得に失敗しました。";
+    throw new Error(message);
+  }
+  return file as GeminiFileResource;
+};
+
+const downloadGeminiFileContent = async (env: Env, file: GeminiFileResource) => {
+  if (!env.GEMINI_API_KEY) {
+    throw new Error("Cloudflare Worker secret `GEMINI_API_KEY` が未設定です。");
+  }
+  const fileName = normalizeFileName(cleanText(file.name, ""));
+  const downloadUri = cleanText(file.downloadUri ?? file.download_uri, "");
+
+  const attempts: Array<{ url: string; headers?: HeadersInit }> = [];
+  if (downloadUri) {
+    attempts.push({ url: downloadUri });
+    attempts.push({
+      url: downloadUri,
+      headers: { "x-goog-api-key": env.GEMINI_API_KEY }
+    });
+  }
+  if (fileName.startsWith("files/")) {
+    attempts.push({
+      url: `${FILE_API_BASE}/${fileName.slice("files/".length)}:download?key=${env.GEMINI_API_KEY}`
+    });
+  }
+
+  let lastError = "Batch結果ファイルのダウンロードに失敗しました。";
+  for (const attempt of attempts) {
+    const response = await fetch(attempt.url, {
+      method: "GET",
+      headers: attempt.headers
+    });
+    if (response.ok) {
+      return response.text();
+    }
+    const data = await readJsonSafely<{ error?: { message?: string } }>(response);
+    lastError = data?.error?.message ?? `HTTP ${response.status}`;
+  }
+
+  throw new Error(lastError);
 };
 
 const requestGeminiBatchStatus = async (env: Env, batchName: string) => {
@@ -800,17 +1012,57 @@ const extractInlinedBatchResponses = (operation: GeminiBatchOperation): GeminiBa
   return [];
 };
 
-const parseBatchImageResults = (operation: GeminiBatchOperation) => {
+const toBatchRequestKey = (pattern: CompositionPattern, layout: MangaLayout) =>
+  [
+    BATCH_KEY_PREFIX,
+    encodeURIComponent(pattern.id),
+    layout,
+    encodeURIComponent(pattern.patternType),
+    encodeURIComponent(pattern.title)
+  ].join("|");
+
+const parseBatchRequestKey = (key: unknown) => {
+  if (typeof key !== "string") {
+    return null;
+  }
+  const parts = key.split("|");
+  if (parts.length < 3 || parts[0] !== BATCH_KEY_PREFIX) {
+    return null;
+  }
+  try {
+    const patternId = decodeURIComponent(parts[1]);
+    const layout = parts[2] === "a4-vertical" ? "a4-vertical" : "four-panel-square";
+    const patternType =
+      parts.length >= 4 ? normalizePatternType(decodeURIComponent(parts[3])) : ("共感型" satisfies PatternType);
+    const patternTitle =
+      parts.length >= 5 ? cleanText(decodeURIComponent(parts[4]), "提案パターン") : "提案パターン";
+
+    return {
+      patternId: cleanText(patternId, "pattern-unknown"),
+      layout,
+      patternType,
+      patternTitle
+    } as const;
+  } catch {
+    return null;
+  }
+};
+
+const parseInlinedBatchImageResults = (operation: GeminiBatchOperation) => {
   const inlinedResponses = extractInlinedBatchResponses(operation);
   const results: BatchImageResult[] = [];
   const errors: string[] = [];
 
   for (const entry of inlinedResponses) {
     const metadata = entry.metadata ?? {};
-    const patternId = cleanText(metadata.patternId, "pattern-unknown");
-    const patternType = normalizePatternType(metadata.patternType);
-    const patternTitle = cleanText(metadata.patternTitle, "提案パターン");
-    const layout = metadata.layout === "a4-vertical" ? "a4-vertical" : "four-panel-square";
+    const decoded = parseBatchRequestKey(metadata.key);
+    const patternId = cleanText(metadata.patternId, decoded?.patternId ?? "pattern-unknown");
+    const patternType = normalizePatternType(metadata.patternType ?? decoded?.patternType);
+    const patternTitle = cleanText(metadata.patternTitle, decoded?.patternTitle ?? "提案パターン");
+    const layout =
+      metadata.layout === "a4-vertical" || decoded?.layout === "a4-vertical"
+        ? "a4-vertical"
+        : "four-panel-square";
     const prompt = cleanText(metadata.prompt, "");
 
     if (entry.error?.message) {
@@ -830,6 +1082,80 @@ const parseBatchImageResults = (operation: GeminiBatchOperation) => {
         layout,
         prompt,
         imageDataUrl: extractImage(entry.response)
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "画像解析に失敗しました。";
+      errors.push(`${patternId}/${layout}: ${message}`);
+    }
+  }
+
+  return { results, errors };
+};
+
+const parseBatchFileResponseRecords = (fileContent: string): GeminiBatchFileResponse[] => {
+  const records: GeminiBatchFileResponse[] = [];
+  for (const rawLine of fileContent.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    try {
+      records.push(JSON.parse(line) as GeminiBatchFileResponse);
+    } catch {
+      continue;
+    }
+  }
+  return records;
+};
+
+const unwrapFileResponse = (entry: GeminiBatchFileResponse) => {
+  if (!entry.response) {
+    return null;
+  }
+  if ("candidates" in entry.response) {
+    return entry.response as GeminiResponse;
+  }
+  if (
+    typeof entry.response === "object" &&
+    entry.response !== null &&
+    "response" in entry.response &&
+    entry.response.response
+  ) {
+    return entry.response.response;
+  }
+  return null;
+};
+
+const parseBatchFileImageResults = (fileResponses: GeminiBatchFileResponse[]) => {
+  const results: BatchImageResult[] = [];
+  const errors: string[] = [];
+
+  for (const entry of fileResponses) {
+    const decoded = parseBatchRequestKey(entry.key);
+    const patternId = decoded?.patternId ?? "pattern-unknown";
+    const layout = decoded?.layout ?? "four-panel-square";
+    const patternType = decoded?.patternType ?? "共感型";
+    const patternTitle = decoded?.patternTitle ?? "提案パターン";
+    const response = unwrapFileResponse(entry);
+    const entryError = entry.error?.message ?? entry.status?.message;
+
+    if (entryError) {
+      errors.push(`${patternId}/${layout}: ${entryError}`);
+      continue;
+    }
+    if (!response) {
+      errors.push(`${patternId}/${layout}: 画像応答がありません。`);
+      continue;
+    }
+
+    try {
+      results.push({
+        patternId,
+        patternType,
+        patternTitle,
+        layout,
+        prompt: "",
+        imageDataUrl: extractImage(response)
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "画像解析に失敗しました。";
@@ -861,12 +1187,23 @@ const toBatchImageRequest = ({
   return {
     request: buildMangaImageRequestBody(parts),
     metadata: {
+      key: toBatchRequestKey(pattern, layout),
       patternId: pattern.id,
       patternType: pattern.patternType,
       patternTitle: pattern.title,
       layout,
       prompt
     }
+  };
+};
+
+const toBatchFileRequest = (request: GeminiBatchInlinedRequest, index: number): GeminiBatchFileRequest => {
+  const metadata = request.metadata ?? {};
+  const rawKey = cleanText(metadata.key, "");
+  const fallbackKey = `${BATCH_KEY_PREFIX}|pattern-${index + 1}|four-panel-square`;
+  return {
+    key: rawKey || fallbackKey,
+    request: request.request
   };
 };
 
@@ -879,8 +1216,23 @@ const createImageBatch = async ({
   requests: GeminiBatchInlinedRequest[];
   displayName: string;
 }) => {
+  const fileRequests = requests.map(toBatchFileRequest);
+  const jsonlContent = fileRequests.map((entry) => JSON.stringify(entry)).join("\n");
+
+  try {
+    const fileName = await uploadBatchInputFile(env, jsonlContent, displayName);
+    const operation = await withImageModelFallback(env, (modelId) =>
+      requestGeminiBatchGenerateWithFile(env, modelId, fileName, displayName)
+    );
+    return operation.name as string;
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Batch file inputに失敗したためinlineにフォールバックします。";
+    console.warn(`Batch file input failed: ${message}`);
+  }
+
   const operation = await withImageModelFallback(env, (modelId) =>
-    requestGeminiBatchGenerate(env, modelId, requests, displayName)
+    requestGeminiBatchGenerateInline(env, modelId, requests, `${displayName}-inline`)
   );
   return operation.name as string;
 };
@@ -1157,38 +1509,55 @@ const batchGenerateAll = async (request: Request, env: Env, origin: string | nul
     body.ownerReferenceDataUrl,
     body.wifeReferenceDataUrl
   );
+  const patternGroups: CompositionPattern[][] = [];
+  for (let index = 0; index < patterns.length; index += BATCH_PATTERNS_PER_JOB) {
+    patternGroups.push(patterns.slice(index, index + BATCH_PATTERNS_PER_JOB));
+  }
 
-  const requests = patterns.flatMap((pattern) => {
-    const { fourPanelPrompt, a4Prompt } = buildPatternPrompts({
-      summary,
-      pattern
-    });
-    return [
-      toBatchImageRequest({
-        pattern,
-        layout: "four-panel-square",
-        prompt: fourPanelPrompt,
-        referenceDataUrls
-      }),
-      toBatchImageRequest({
-        pattern,
-        layout: "a4-vertical",
-        prompt: a4Prompt,
-        referenceDataUrls
-      })
-    ];
-  });
+  const batchJobs = await Promise.all(
+    patternGroups.map(async (group, groupIndex) => {
+      const requests = group.flatMap((pattern) => {
+        const { fourPanelPrompt, a4Prompt } = buildPatternPrompts({
+          summary,
+          pattern
+        });
+        return [
+          toBatchImageRequest({
+            pattern,
+            layout: "four-panel-square",
+            prompt: fourPanelPrompt,
+            referenceDataUrls
+          }),
+          toBatchImageRequest({
+            pattern,
+            layout: "a4-vertical",
+            prompt: a4Prompt,
+            referenceDataUrls
+          })
+        ];
+      });
 
-  const batchName = await createImageBatch({
-    env,
-    requests,
-    displayName: `line-manga-generate-all-${Date.now()}`
-  });
+      const batchName = await createImageBatch({
+        env,
+        requests,
+        displayName: `line-manga-generate-all-${Date.now()}-${groupIndex + 1}`
+      });
+
+      return {
+        batchName,
+        requestCount: requests.length,
+        patternIds: group.map((pattern) => pattern.id)
+      };
+    })
+  );
+
+  const totalRequestCount = batchJobs.reduce((total, job) => total + job.requestCount, 0);
 
   return json(
     {
-      batchName,
-      requestCount: requests.length,
+      batchName: batchJobs[0]?.batchName ?? null,
+      batchJobs,
+      requestCount: totalRequestCount,
       patternCount: patterns.length,
       pollIntervalMs: BATCH_POLL_INTERVAL_MS
     },
@@ -1309,19 +1678,37 @@ const batchStatus = async (request: Request, env: Env, origin: string | null) =>
     );
   }
 
-  const { results, errors } = parseBatchImageResults(operation);
+  const inlined = parseInlinedBatchImageResults(operation);
+  let results = inlined.results;
+  const errors = [...inlined.errors];
+
   if (results.length === 0 && operation.response?.responsesFile) {
+    const outputFile = await requestGeminiFile(env, operation.response.responsesFile);
+    const outputContent = await downloadGeminiFileContent(env, outputFile);
+    const fileEntries = parseBatchFileResponseRecords(outputContent);
+    const parsedFromFile = parseBatchFileImageResults(fileEntries);
+    results = parsedFromFile.results;
+    errors.push(...parsedFromFile.errors);
+  }
+
+  if (results.length === 0 && errors.length === 0) {
+    errors.push("Batch結果から画像を取得できませんでした。");
+  }
+
+  if (errors.length > 0 && results.length === 0) {
     return json(
       {
         done: true,
         state,
         batchName: normalizeBatchName(batchName),
-        error: "responsesFile形式のBatch出力は未対応です。"
+        error: errors.join(" | "),
+        results: []
       },
       200,
       origin
     );
   }
+
   if (errors.length > 0) {
     return json(
       {
