@@ -27,7 +27,7 @@ export function MangaPreview({ result, generatedImageCount, onBack, onOpenRevise
       </p>
 
       <p className="mt-3 inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
-        画像生成枚数: {generatedImageCount}枚 / 概算コスト: ${estimatedCost}
+        バッチ生成枚数: {generatedImageCount}枚 / 概算コスト: ${estimatedCost}
       </p>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-2">

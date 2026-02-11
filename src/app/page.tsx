@@ -12,6 +12,34 @@ type ApiError = {
   error?: string;
 };
 
+type MangaLayout = "four-panel-square" | "a4-vertical";
+
+type BatchStartResponse = {
+  batchName: string;
+  requestCount: number;
+  pollIntervalMs?: number;
+};
+
+type BatchImageResult = {
+  patternId: string;
+  patternType: CompositionPattern["patternType"];
+  patternTitle: string;
+  layout: MangaLayout;
+  prompt: string;
+  imageDataUrl: string;
+};
+
+type BatchStatusResponse = {
+  done: boolean;
+  state: string;
+  batchName: string;
+  pollIntervalMs?: number;
+  error?: string;
+  results?: BatchImageResult[];
+};
+
+type PatternGenerationMap = Record<string, GenerationResult>;
+
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").trim().replace(/\/+$/, "");
 
 const resolveApiUrl = (path: string) => {
@@ -35,6 +63,7 @@ const STEP_LABELS = [
 const INITIAL_SUMMARY: SummaryResult = normalizeSummary(null);
 const OWNER_REFERENCE_PATH = "references/owner.png";
 const WIFE_REFERENCE_PATH = "references/wife.png";
+const BATCH_POLL_INTERVAL_MS = 5000;
 
 const blobToDataUrl = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
@@ -68,6 +97,50 @@ async function postJson<T>(url: string, payload: unknown): Promise<T> {
   return data;
 }
 
+const wait = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+const toSingleGenerationResult = (results: BatchImageResult[], patternId: string): GenerationResult => {
+  const fourPanel = results.find(
+    (result) => result.patternId === patternId && result.layout === "four-panel-square"
+  );
+  const a4 = results.find((result) => result.patternId === patternId && result.layout === "a4-vertical");
+  if (!fourPanel || !a4) {
+    throw new Error(`バッチ結果が不足しています: ${patternId}`);
+  }
+  return {
+    fourPanelImageDataUrl: fourPanel.imageDataUrl,
+    a4ImageDataUrl: a4.imageDataUrl,
+    fourPanelPrompt: fourPanel.prompt,
+    a4Prompt: a4.prompt
+  };
+};
+
+const toPatternGenerationMap = (results: BatchImageResult[]): PatternGenerationMap => {
+  const map: PatternGenerationMap = {};
+  const patternIds = Array.from(new Set(results.map((result) => result.patternId)));
+
+  for (const patternId of patternIds) {
+    const fourPanel = results.find(
+      (result) => result.patternId === patternId && result.layout === "four-panel-square"
+    );
+    const a4 = results.find((result) => result.patternId === patternId && result.layout === "a4-vertical");
+    if (!fourPanel || !a4) {
+      continue;
+    }
+    map[patternId] = {
+      fourPanelImageDataUrl: fourPanel.imageDataUrl,
+      a4ImageDataUrl: a4.imageDataUrl,
+      fourPanelPrompt: fourPanel.prompt,
+      a4Prompt: a4.prompt
+    };
+  }
+
+  return map;
+};
+
 export default function Home() {
   const [step, setStep] = useState(1);
   const [postText, setPostText] = useState("");
@@ -75,12 +148,14 @@ export default function Home() {
   const [patterns, setPatterns] = useState<CompositionPattern[]>([]);
   const [selectedPatternId, setSelectedPatternId] = useState<string | null>(null);
   const [generation, setGeneration] = useState<GenerationResult | null>(null);
+  const [generationByPatternId, setGenerationByPatternId] = useState<PatternGenerationMap>({});
   const [revisedGeneration, setRevisedGeneration] = useState<GenerationResult | null>(null);
   const [ownerReferenceDataUrl, setOwnerReferenceDataUrl] = useState<string | null>(null);
   const [wifeReferenceDataUrl, setWifeReferenceDataUrl] = useState<string | null>(null);
   const [referenceLoading, setReferenceLoading] = useState(true);
   const [referenceError, setReferenceError] = useState<string | null>(null);
   const [generatedImageCount, setGeneratedImageCount] = useState(0);
+  const [batchStatusMessage, setBatchStatusMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isApiBaseConfigured = API_BASE_URL.length > 0;
@@ -89,6 +164,36 @@ export default function Home() {
     () => patterns.find((pattern) => pattern.id === selectedPatternId) ?? null,
     [patterns, selectedPatternId]
   );
+
+  const generatedPatternIds = useMemo(() => Object.keys(generationByPatternId), [generationByPatternId]);
+
+  const pollBatchUntilDone = async (batchName: string, fallbackIntervalMs = 5000) => {
+    for (let attempt = 0; attempt < 180; attempt += 1) {
+      const status = await postJson<BatchStatusResponse>("/api/batch-status", { batchName });
+      if (status.done) {
+        if (status.error) {
+          throw new Error(status.error);
+        }
+        return status;
+      }
+
+      const stateText = status.state || "RUNNING";
+      setBatchStatusMessage(`バッチ処理中: ${stateText} (${attempt + 1}回目の確認)`);
+      await wait(status.pollIntervalMs ?? fallbackIntervalMs);
+    }
+
+    throw new Error(`バッチ処理の待機がタイムアウトしました。batchName: ${batchName}`);
+  };
+
+  const selectGeneratedPattern = (patternId: string) => {
+    const generated = generationByPatternId[patternId];
+    if (!generated) {
+      return;
+    }
+    setSelectedPatternId(patternId);
+    setGeneration(generated);
+    setRevisedGeneration(null);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -130,11 +235,17 @@ export default function Home() {
   const handleSummarize = async () => {
     try {
       setError(null);
+      setBatchStatusMessage(null);
       setLoading(true);
       const data = await postJson<{ summary: SummaryResult }>("/api/summarize", {
         postText
       });
       setSummary(data.summary);
+      setPatterns([]);
+      setSelectedPatternId(null);
+      setGeneration(null);
+      setGenerationByPatternId({});
+      setRevisedGeneration(null);
       setStep(2);
     } catch (err) {
       setError(err instanceof Error ? err.message : "要点抽出に失敗しました。");
@@ -146,12 +257,16 @@ export default function Home() {
   const handleCompose = async () => {
     try {
       setError(null);
+      setBatchStatusMessage(null);
       setLoading(true);
       const data = await postJson<{ patterns: CompositionPattern[] }>("/api/compose", {
         summary
       });
       setPatterns(data.patterns);
       setSelectedPatternId(data.patterns[0]?.id ?? null);
+      setGeneration(null);
+      setGenerationByPatternId({});
+      setRevisedGeneration(null);
       setStep(3);
     } catch (err) {
       setError(err instanceof Error ? err.message : "構成案生成に失敗しました。");
@@ -168,19 +283,76 @@ export default function Home() {
 
     try {
       setError(null);
+      setBatchStatusMessage("バッチジョブを作成しています...");
       setLoading(true);
-      const data = await postJson<GenerationResult>("/api/generate", {
+      const started = await postJson<BatchStartResponse>("/api/batch-generate", {
         summary,
         pattern: selectedPattern,
         ownerReferenceDataUrl,
         wifeReferenceDataUrl
       });
-      setGeneration(data);
+      setBatchStatusMessage(`バッチ作成完了: ${started.batchName}`);
+      const completed = await pollBatchUntilDone(
+        started.batchName,
+        started.pollIntervalMs ?? BATCH_POLL_INTERVAL_MS
+      );
+      const results = completed.results ?? [];
+      const generated = toSingleGenerationResult(results, selectedPattern.id);
+      setGeneration(generated);
+      setGenerationByPatternId({ [selectedPattern.id]: generated });
       setRevisedGeneration(null);
-      setGeneratedImageCount((count) => count + 2);
+      setGeneratedImageCount((count) => count + results.length);
+      setBatchStatusMessage("バッチ生成が完了しました。");
       setStep(4);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "漫画生成に失敗しました。");
+      setError(err instanceof Error ? err.message : "バッチ生成に失敗しました。");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGenerateAll = async () => {
+    if (patterns.length === 0) {
+      setError("構成案がありません。STEP2からやり直してください。");
+      return;
+    }
+
+    try {
+      setError(null);
+      setBatchStatusMessage("全構成案のバッチジョブを作成しています...");
+      setLoading(true);
+      const started = await postJson<BatchStartResponse>("/api/batch-generate-all", {
+        summary,
+        patterns,
+        ownerReferenceDataUrl,
+        wifeReferenceDataUrl
+      });
+      setBatchStatusMessage(`全構成案バッチ作成完了: ${started.batchName}`);
+      const completed = await pollBatchUntilDone(
+        started.batchName,
+        started.pollIntervalMs ?? BATCH_POLL_INTERVAL_MS
+      );
+      const results = completed.results ?? [];
+      const map = toPatternGenerationMap(results);
+      const generatedIds = Object.keys(map);
+      if (generatedIds.length === 0) {
+        throw new Error("全構成案バッチの生成結果が空でした。");
+      }
+
+      const preferredId =
+        (selectedPatternId && map[selectedPatternId] ? selectedPatternId : null) ??
+        patterns.find((pattern) => map[pattern.id])?.id ??
+        generatedIds[0];
+
+      setGenerationByPatternId(map);
+      setSelectedPatternId(preferredId);
+      setGeneration(map[preferredId] ?? null);
+      setRevisedGeneration(null);
+      setGeneratedImageCount((count) => count + results.length);
+      setBatchStatusMessage("全構成案バッチ生成が完了しました。");
+      setStep(4);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "全構成案バッチ生成に失敗しました。");
     } finally {
       setLoading(false);
     }
@@ -193,8 +365,9 @@ export default function Home() {
     }
     try {
       setError(null);
+      setBatchStatusMessage("修正再生成のバッチジョブを作成しています...");
       setLoading(true);
-      const data = await postJson<GenerationResult>("/api/revise", {
+      const started = await postJson<BatchStartResponse>("/api/batch-revise", {
         summary,
         pattern: selectedPattern,
         ownerReferenceDataUrl,
@@ -203,20 +376,32 @@ export default function Home() {
         previousFourPanelImageDataUrl: generation.fourPanelImageDataUrl,
         previousA4ImageDataUrl: generation.a4ImageDataUrl
       });
-      setRevisedGeneration(data);
-      setGeneratedImageCount((count) => count + 2);
+      setBatchStatusMessage(`修正バッチ作成完了: ${started.batchName}`);
+      const completed = await pollBatchUntilDone(
+        started.batchName,
+        started.pollIntervalMs ?? BATCH_POLL_INTERVAL_MS
+      );
+      const results = completed.results ?? [];
+      const revised = toSingleGenerationResult(results, selectedPattern.id);
+      setRevisedGeneration(revised);
+      setGeneratedImageCount((count) => count + results.length);
+      setBatchStatusMessage("修正再生成バッチが完了しました。");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "修正再生成に失敗しました。");
+      setError(err instanceof Error ? err.message : "修正再生成バッチに失敗しました。");
     } finally {
       setLoading(false);
     }
   };
 
   const handleAdoptRevised = () => {
-    if (!revisedGeneration) {
+    if (!revisedGeneration || !selectedPatternId) {
       return;
     }
     setGeneration(revisedGeneration);
+    setGenerationByPatternId((current) => ({
+      ...current,
+      [selectedPatternId]: revisedGeneration
+    }));
     setRevisedGeneration(null);
     setStep(4);
   };
@@ -255,6 +440,11 @@ export default function Home() {
       {error ? (
         <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {error}
+        </p>
+      ) : null}
+      {batchStatusMessage ? (
+        <p className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+          {batchStatusMessage}
         </p>
       ) : null}
 
@@ -296,7 +486,36 @@ export default function Home() {
             onSelect={setSelectedPatternId}
             onBack={() => setStep(2)}
             onGenerate={handleGenerate}
+            onGenerateAll={handleGenerateAll}
           />
+        ) : null}
+
+        {(step === 4 || step === 5) && generatedPatternIds.length > 1 ? (
+          <section className="rounded-2xl bg-white p-4 shadow-panel">
+            <h3 className="text-sm font-semibold text-slate-800">生成済み構成案</h3>
+            <p className="mt-1 text-xs text-slate-600">表示・修正する構成案を選択できます。</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {patterns
+                .filter((pattern) => generationByPatternId[pattern.id])
+                .map((pattern) => {
+                  const selected = pattern.id === selectedPatternId;
+                  return (
+                    <button
+                      key={pattern.id}
+                      type="button"
+                      onClick={() => selectGeneratedPattern(pattern.id)}
+                      className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
+                        selected
+                          ? "border-brand-500 bg-brand-50 text-brand-700"
+                          : "border-slate-300 bg-white text-slate-700"
+                      }`}
+                    >
+                      {pattern.patternType} / {pattern.title}
+                    </button>
+                  );
+                })}
+            </div>
+          </section>
         ) : null}
 
         {step === 4 && generation ? (

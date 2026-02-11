@@ -22,6 +22,7 @@ type A4Flow = {
 };
 
 type PatternType = "共感型" | "驚き型" | "体験談型";
+type MangaLayout = "four-panel-square" | "a4-vertical";
 
 type CompositionPattern = {
   id: string;
@@ -82,10 +83,55 @@ type GeminiListModelsResponse = {
   };
 };
 
-const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+type GeminiBatchInlinedRequest = {
+  request: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+};
+
+type GeminiBatchInlineError = {
+  message?: string;
+};
+
+type GeminiBatchInlinedResponse = {
+  metadata?: Record<string, unknown>;
+  response?: GeminiResponse;
+  error?: GeminiBatchInlineError;
+};
+
+type GeminiBatchOperation = {
+  name?: string;
+  done?: boolean;
+  metadata?: Record<string, unknown>;
+  response?: {
+    inlinedResponses?:
+      | GeminiBatchInlinedResponse[]
+      | {
+          inlinedResponses?: GeminiBatchInlinedResponse[];
+        };
+    responsesFile?: string;
+    state?: string;
+  } & Record<string, unknown>;
+  error?: {
+    message?: string;
+  };
+};
+
+type BatchImageResult = {
+  patternId: string;
+  patternType: PatternType;
+  patternTitle: string;
+  layout: MangaLayout;
+  prompt: string;
+  imageDataUrl: string;
+};
+
+const API_ROOT = "https://generativelanguage.googleapis.com/v1beta";
+const API_BASE = `${API_ROOT}/models`;
 const DEFAULT_TEXT_MODEL = "gemini-3-flash-preview";
 const DEFAULT_IMAGE_MODEL = "gemini-3-pro-image-preview";
 const MODEL_LIST_CACHE_MS = 1000 * 60 * 10;
+const BATCH_POLL_INTERVAL_MS = 5000;
+const BATCH_TERMINAL_KEYWORDS = ["SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED"];
 const IMAGE_MODEL_ALIASES: Record<string, string> = {
   "nano-banana-pro": DEFAULT_IMAGE_MODEL,
   "nano-banana": DEFAULT_IMAGE_MODEL
@@ -197,7 +243,7 @@ const imagePrompt = ({
 }: {
   summary: SummaryResult;
   pattern: CompositionPattern;
-  layout: "four-panel-square" | "a4-vertical";
+  layout: MangaLayout;
   revisionInstruction?: string;
 }) => {
   const sizeInstruction =
@@ -432,7 +478,7 @@ const listGeminiModels = async (env: Env, forceRefresh = false): Promise<GeminiM
 };
 
 const isRecoverableModelError = (message: string) =>
-  /not found|not supported for generatecontent|unsupported/i.test(message);
+  /not found|not supported for (generatecontent|batchgeneratecontent)|unsupported/i.test(message);
 
 const pickImageFallbackModel = (models: GeminiModel[], excludeModel: string) => {
   const excluded = normalizeModelId(excludeModel).toLowerCase();
@@ -465,6 +511,34 @@ const pickImageFallbackModel = (models: GeminiModel[], excludeModel: string) => 
   }
 
   return uniqueIds[0];
+};
+
+const withImageModelFallback = async <T>(
+  env: Env,
+  action: (modelId: string) => Promise<T>,
+  preferredModel?: string
+) => {
+  const configuredModel = resolveImageModelAlias(preferredModel ?? env.GEMINI_IMAGE_MODEL ?? DEFAULT_IMAGE_MODEL);
+  try {
+    return await action(configuredModel);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Gemini API呼び出しに失敗しました。";
+    if (!isRecoverableModelError(message)) {
+      throw error;
+    }
+
+    const availableModels = await listGeminiModels(env, true);
+    const fallbackModel = pickImageFallbackModel(availableModels, configuredModel);
+    if (!fallbackModel) {
+      throw new Error(
+        `画像生成モデル '${configuredModel}' が利用できません。利用可能な generateContent 対応モデルを確認してください。`
+      );
+    }
+    if (fallbackModel.toLowerCase() === configuredModel.toLowerCase()) {
+      throw error;
+    }
+    return action(fallbackModel);
+  }
 };
 
 const requestGemini = async (env: Env, model: string, body: Record<string, unknown>) => {
@@ -565,13 +639,11 @@ const toInlinePartFromDataUrl = (dataUrl: string): GeminiPart => {
   };
 };
 
-const generateMangaImage = async ({
-  env,
+const buildMangaImageParts = ({
   prompt,
   referenceDataUrls = [],
   previousImageDataUrl
 }: {
-  env: Env;
   prompt: string;
   referenceDataUrls?: string[];
   previousImageDataUrl?: string;
@@ -592,7 +664,11 @@ const generateMangaImage = async ({
     parts.push(toInlinePartFromDataUrl(previousImageDataUrl));
   }
 
-  const requestBody = {
+  return parts;
+};
+
+const buildMangaImageRequestBody = (parts: GeminiPart[]) =>
+  ({
     contents: [
       {
         role: "user",
@@ -603,30 +679,210 @@ const generateMangaImage = async ({
       temperature: 0.8,
       responseModalities: ["IMAGE", "TEXT"]
     }
-  } satisfies Record<string, unknown>;
+  }) satisfies Record<string, unknown>;
 
-  const configuredModel = resolveImageModelAlias(env.GEMINI_IMAGE_MODEL ?? DEFAULT_IMAGE_MODEL);
-  let response: GeminiResponse;
-  try {
-    response = await requestGemini(env, configuredModel, requestBody);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Gemini API呼び出しに失敗しました。";
-    if (!isRecoverableModelError(message)) {
-      throw error;
-    }
+const generateMangaImage = async ({
+  env,
+  prompt,
+  referenceDataUrls = [],
+  previousImageDataUrl
+}: {
+  env: Env;
+  prompt: string;
+  referenceDataUrls?: string[];
+  previousImageDataUrl?: string;
+}) => {
+  const parts = buildMangaImageParts({
+    prompt,
+    referenceDataUrls,
+    previousImageDataUrl
+  });
+  const requestBody = buildMangaImageRequestBody(parts);
+  const response = await withImageModelFallback(env, (modelId) => requestGemini(env, modelId, requestBody));
+  return extractImage(response);
+};
 
-    const availableModels = await listGeminiModels(env, true);
-    const fallbackModel = pickImageFallbackModel(availableModels, configuredModel);
-    if (!fallbackModel) {
-      throw new Error(
-        `画像生成モデル '${configuredModel}' が利用できません。利用可能な generateContent 対応モデルを確認してください。`
-      );
-    }
+const requestGeminiBatchGenerate = async (
+  env: Env,
+  model: string,
+  requests: GeminiBatchInlinedRequest[],
+  displayName: string
+) => {
+  if (!env.GEMINI_API_KEY) {
+    throw new Error("Cloudflare Worker secret `GEMINI_API_KEY` が未設定です。");
+  }
+  const modelId = normalizeModelId(model);
 
-    response = await requestGemini(env, fallbackModel, requestBody);
+  const response = await fetch(`${API_BASE}/${modelId}:batchGenerateContent?key=${env.GEMINI_API_KEY}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      batch: {
+        displayName,
+        inputConfig: {
+          requests: {
+            requests
+          }
+        }
+      }
+    })
+  });
+
+  const data = (await response.json()) as GeminiBatchOperation;
+  if (!response.ok) {
+    throw new Error(data.error?.message ?? "Gemini Batch API呼び出しに失敗しました。");
+  }
+  if (!data.name) {
+    throw new Error("Batchジョブ名の取得に失敗しました。");
+  }
+  return data;
+};
+
+const normalizeBatchName = (value: string) => {
+  const trimmed = value.trim().replace(/^https?:\/\/[^/]+\//, "").replace(/^\/+/, "");
+  const unversioned = trimmed.replace(/^v1beta\//, "");
+  return unversioned.startsWith("batches/") ? unversioned : trimmed;
+};
+
+const requestGeminiBatchStatus = async (env: Env, batchName: string) => {
+  if (!env.GEMINI_API_KEY) {
+    throw new Error("Cloudflare Worker secret `GEMINI_API_KEY` が未設定です。");
+  }
+  const normalizedName = normalizeBatchName(batchName);
+  if (!normalizedName.startsWith("batches/")) {
+    throw new Error("batchName は `batches/...` 形式で指定してください。");
   }
 
-  return extractImage(response);
+  const response = await fetch(`${API_ROOT}/${normalizedName}?key=${env.GEMINI_API_KEY}`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json"
+    }
+  });
+  const data = (await response.json()) as GeminiBatchOperation;
+  if (!response.ok) {
+    throw new Error(data.error?.message ?? "Batchジョブ状態の取得に失敗しました。");
+  }
+  return data;
+};
+
+const getBatchState = (operation: GeminiBatchOperation) => {
+  const metadataState =
+    operation.metadata && typeof operation.metadata.state === "string"
+      ? operation.metadata.state
+      : undefined;
+  if (metadataState) {
+    return metadataState;
+  }
+  if (typeof operation.response?.state === "string") {
+    return operation.response.state;
+  }
+  return operation.done ? "SUCCEEDED" : "RUNNING";
+};
+
+const isTerminalBatchState = (state: string) => {
+  const upper = state.toUpperCase();
+  return BATCH_TERMINAL_KEYWORDS.some((keyword) => upper.includes(keyword));
+};
+
+const isSuccessfulBatchState = (state: string) => state.toUpperCase().includes("SUCCEEDED");
+
+const extractInlinedBatchResponses = (operation: GeminiBatchOperation): GeminiBatchInlinedResponse[] => {
+  const container = operation.response?.inlinedResponses;
+  if (Array.isArray(container)) {
+    return container;
+  }
+  if (container && Array.isArray(container.inlinedResponses)) {
+    return container.inlinedResponses;
+  }
+  return [];
+};
+
+const parseBatchImageResults = (operation: GeminiBatchOperation) => {
+  const inlinedResponses = extractInlinedBatchResponses(operation);
+  const results: BatchImageResult[] = [];
+  const errors: string[] = [];
+
+  for (const entry of inlinedResponses) {
+    const metadata = entry.metadata ?? {};
+    const patternId = cleanText(metadata.patternId, "pattern-unknown");
+    const patternType = normalizePatternType(metadata.patternType);
+    const patternTitle = cleanText(metadata.patternTitle, "提案パターン");
+    const layout = metadata.layout === "a4-vertical" ? "a4-vertical" : "four-panel-square";
+    const prompt = cleanText(metadata.prompt, "");
+
+    if (entry.error?.message) {
+      errors.push(`${patternId}/${layout}: ${entry.error.message}`);
+      continue;
+    }
+    if (!entry.response) {
+      errors.push(`${patternId}/${layout}: 画像応答がありません。`);
+      continue;
+    }
+
+    try {
+      results.push({
+        patternId,
+        patternType,
+        patternTitle,
+        layout,
+        prompt,
+        imageDataUrl: extractImage(entry.response)
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "画像解析に失敗しました。";
+      errors.push(`${patternId}/${layout}: ${message}`);
+    }
+  }
+
+  return { results, errors };
+};
+
+const toBatchImageRequest = ({
+  pattern,
+  layout,
+  prompt,
+  referenceDataUrls,
+  previousImageDataUrl
+}: {
+  pattern: CompositionPattern;
+  layout: MangaLayout;
+  prompt: string;
+  referenceDataUrls: string[];
+  previousImageDataUrl?: string;
+}): GeminiBatchInlinedRequest => {
+  const parts = buildMangaImageParts({
+    prompt,
+    referenceDataUrls,
+    previousImageDataUrl
+  });
+  return {
+    request: buildMangaImageRequestBody(parts),
+    metadata: {
+      patternId: pattern.id,
+      patternType: pattern.patternType,
+      patternTitle: pattern.title,
+      layout,
+      prompt
+    }
+  };
+};
+
+const createImageBatch = async ({
+  env,
+  requests,
+  displayName
+}: {
+  env: Env;
+  requests: GeminiBatchInlinedRequest[];
+  displayName: string;
+}) => {
+  const operation = await withImageModelFallback(env, (modelId) =>
+    requestGeminiBatchGenerate(env, modelId, requests, displayName)
+  );
+  return operation.name as string;
 };
 
 const collectReferenceDataUrls = (ownerReferenceDataUrl?: string, wifeReferenceDataUrl?: string) =>
@@ -711,6 +967,30 @@ const compose = async (request: Request, env: Env, origin: string | null) => {
   return json({ patterns: normalizePatterns(raw) }, 200, origin);
 };
 
+const buildPatternPrompts = ({
+  summary,
+  pattern,
+  revisionInstruction
+}: {
+  summary: SummaryResult;
+  pattern: CompositionPattern;
+  revisionInstruction?: string;
+}) => {
+  const fourPanelPrompt = imagePrompt({
+    summary,
+    pattern,
+    layout: "four-panel-square",
+    revisionInstruction
+  });
+  const a4Prompt = imagePrompt({
+    summary,
+    pattern,
+    layout: "a4-vertical",
+    revisionInstruction
+  });
+  return { fourPanelPrompt, a4Prompt };
+};
+
 const generate = async (request: Request, env: Env, origin: string | null) => {
   const body = (await request.json()) as {
     summary?: unknown;
@@ -726,15 +1006,9 @@ const generate = async (request: Request, env: Env, origin: string | null) => {
     body.wifeReferenceDataUrl
   );
 
-  const fourPanelPrompt = imagePrompt({
+  const { fourPanelPrompt, a4Prompt } = buildPatternPrompts({
     summary,
-    pattern,
-    layout: "four-panel-square"
-  });
-  const a4Prompt = imagePrompt({
-    summary,
-    pattern,
-    layout: "a4-vertical"
+    pattern
   });
 
   const [fourPanelImageDataUrl, a4ImageDataUrl] = await Promise.all([
@@ -785,16 +1059,9 @@ const revise = async (request: Request, env: Env, origin: string | null) => {
     body.wifeReferenceDataUrl
   );
 
-  const fourPanelPrompt = imagePrompt({
+  const { fourPanelPrompt, a4Prompt } = buildPatternPrompts({
     summary,
     pattern,
-    layout: "four-panel-square",
-    revisionInstruction
-  });
-  const a4Prompt = imagePrompt({
-    summary,
-    pattern,
-    layout: "a4-vertical",
     revisionInstruction
   });
 
@@ -819,6 +1086,262 @@ const revise = async (request: Request, env: Env, origin: string | null) => {
       a4ImageDataUrl,
       fourPanelPrompt,
       a4Prompt
+    },
+    200,
+    origin
+  );
+};
+
+const batchGenerate = async (request: Request, env: Env, origin: string | null) => {
+  const body = (await request.json()) as {
+    summary?: unknown;
+    pattern?: unknown;
+    ownerReferenceDataUrl?: string;
+    wifeReferenceDataUrl?: string;
+  };
+
+  const summary = normalizeSummary(body.summary);
+  const pattern = normalizePatterns({ patterns: [body.pattern] })[0];
+  const referenceDataUrls = collectReferenceDataUrls(
+    body.ownerReferenceDataUrl,
+    body.wifeReferenceDataUrl
+  );
+  const { fourPanelPrompt, a4Prompt } = buildPatternPrompts({
+    summary,
+    pattern
+  });
+
+  const requests: GeminiBatchInlinedRequest[] = [
+    toBatchImageRequest({
+      pattern,
+      layout: "four-panel-square",
+      prompt: fourPanelPrompt,
+      referenceDataUrls
+    }),
+    toBatchImageRequest({
+      pattern,
+      layout: "a4-vertical",
+      prompt: a4Prompt,
+      referenceDataUrls
+    })
+  ];
+
+  const batchName = await createImageBatch({
+    env,
+    requests,
+    displayName: `line-manga-generate-${Date.now()}`
+  });
+
+  return json(
+    {
+      batchName,
+      requestCount: requests.length,
+      pollIntervalMs: BATCH_POLL_INTERVAL_MS
+    },
+    200,
+    origin
+  );
+};
+
+const batchGenerateAll = async (request: Request, env: Env, origin: string | null) => {
+  const body = (await request.json()) as {
+    summary?: unknown;
+    patterns?: unknown;
+    ownerReferenceDataUrl?: string;
+    wifeReferenceDataUrl?: string;
+  };
+
+  const summary = normalizeSummary(body.summary);
+  const patterns = normalizePatterns({ patterns: body.patterns });
+  const referenceDataUrls = collectReferenceDataUrls(
+    body.ownerReferenceDataUrl,
+    body.wifeReferenceDataUrl
+  );
+
+  const requests = patterns.flatMap((pattern) => {
+    const { fourPanelPrompt, a4Prompt } = buildPatternPrompts({
+      summary,
+      pattern
+    });
+    return [
+      toBatchImageRequest({
+        pattern,
+        layout: "four-panel-square",
+        prompt: fourPanelPrompt,
+        referenceDataUrls
+      }),
+      toBatchImageRequest({
+        pattern,
+        layout: "a4-vertical",
+        prompt: a4Prompt,
+        referenceDataUrls
+      })
+    ];
+  });
+
+  const batchName = await createImageBatch({
+    env,
+    requests,
+    displayName: `line-manga-generate-all-${Date.now()}`
+  });
+
+  return json(
+    {
+      batchName,
+      requestCount: requests.length,
+      patternCount: patterns.length,
+      pollIntervalMs: BATCH_POLL_INTERVAL_MS
+    },
+    200,
+    origin
+  );
+};
+
+const batchRevise = async (request: Request, env: Env, origin: string | null) => {
+  const body = (await request.json()) as {
+    summary?: unknown;
+    pattern?: unknown;
+    revisionInstruction?: string;
+    ownerReferenceDataUrl?: string;
+    wifeReferenceDataUrl?: string;
+    previousFourPanelImageDataUrl?: string;
+    previousA4ImageDataUrl?: string;
+  };
+
+  const revisionInstruction = body.revisionInstruction?.trim();
+  if (!revisionInstruction) {
+    return badRequest("修正指示を入力してください。", origin);
+  }
+
+  const summary = normalizeSummary(body.summary);
+  const pattern = normalizePatterns({ patterns: [body.pattern] })[0];
+  const referenceDataUrls = collectReferenceDataUrls(
+    body.ownerReferenceDataUrl,
+    body.wifeReferenceDataUrl
+  );
+  const { fourPanelPrompt, a4Prompt } = buildPatternPrompts({
+    summary,
+    pattern,
+    revisionInstruction
+  });
+
+  const requests: GeminiBatchInlinedRequest[] = [
+    toBatchImageRequest({
+      pattern,
+      layout: "four-panel-square",
+      prompt: fourPanelPrompt,
+      referenceDataUrls,
+      previousImageDataUrl: body.previousFourPanelImageDataUrl
+    }),
+    toBatchImageRequest({
+      pattern,
+      layout: "a4-vertical",
+      prompt: a4Prompt,
+      referenceDataUrls,
+      previousImageDataUrl: body.previousA4ImageDataUrl
+    })
+  ];
+
+  const batchName = await createImageBatch({
+    env,
+    requests,
+    displayName: `line-manga-revise-${Date.now()}`
+  });
+
+  return json(
+    {
+      batchName,
+      requestCount: requests.length,
+      pollIntervalMs: BATCH_POLL_INTERVAL_MS
+    },
+    200,
+    origin
+  );
+};
+
+const batchStatus = async (request: Request, env: Env, origin: string | null) => {
+  const body = (await request.json()) as { batchName?: string };
+  const batchName = body.batchName?.trim();
+  if (!batchName) {
+    return badRequest("batchName を指定してください。", origin);
+  }
+
+  const operation = await requestGeminiBatchStatus(env, batchName);
+  const state = getBatchState(operation);
+  const done = operation.done === true || isTerminalBatchState(state);
+
+  if (!done) {
+    return json(
+      {
+        done: false,
+        state,
+        batchName: normalizeBatchName(batchName),
+        pollIntervalMs: BATCH_POLL_INTERVAL_MS
+      },
+      200,
+      origin
+    );
+  }
+
+  if (operation.error?.message) {
+    return json(
+      {
+        done: true,
+        state,
+        batchName: normalizeBatchName(batchName),
+        error: operation.error.message
+      },
+      200,
+      origin
+    );
+  }
+
+  if (!isSuccessfulBatchState(state)) {
+    return json(
+      {
+        done: true,
+        state,
+        batchName: normalizeBatchName(batchName),
+        error: `Batchが失敗しました: ${state}`
+      },
+      200,
+      origin
+    );
+  }
+
+  const { results, errors } = parseBatchImageResults(operation);
+  if (results.length === 0 && operation.response?.responsesFile) {
+    return json(
+      {
+        done: true,
+        state,
+        batchName: normalizeBatchName(batchName),
+        error: "responsesFile形式のBatch出力は未対応です。"
+      },
+      200,
+      origin
+    );
+  }
+  if (errors.length > 0) {
+    return json(
+      {
+        done: true,
+        state,
+        batchName: normalizeBatchName(batchName),
+        error: errors.join(" | "),
+        results
+      },
+      200,
+      origin
+    );
+  }
+
+  return json(
+    {
+      done: true,
+      state,
+      batchName: normalizeBatchName(batchName),
+      results
     },
     200,
     origin
@@ -869,6 +1392,14 @@ export default {
           return await generate(request, env, originState.origin);
         case "/api/revise":
           return await revise(request, env, originState.origin);
+        case "/api/batch-generate":
+          return await batchGenerate(request, env, originState.origin);
+        case "/api/batch-generate-all":
+          return await batchGenerateAll(request, env, originState.origin);
+        case "/api/batch-revise":
+          return await batchRevise(request, env, originState.origin);
+        case "/api/batch-status":
+          return await batchStatus(request, env, originState.origin);
         default:
           return json({ error: "Not Found" }, 404, originState.origin);
       }

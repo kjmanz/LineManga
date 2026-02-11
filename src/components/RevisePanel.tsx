@@ -50,7 +50,7 @@ export function RevisePanel({
           onClick={() => onRevise(instruction)}
           className="rounded-xl bg-brand-600 px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
         >
-          {loading ? "再生成中..." : "修正して再生成"}
+          {loading ? "バッチ再生成中..." : "修正してバッチ再生成"}
         </button>
         {revisedResult ? (
           <button

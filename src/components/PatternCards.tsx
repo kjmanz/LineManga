@@ -9,6 +9,7 @@ type Props = {
   onSelect: (patternId: string) => void;
   onBack: () => void;
   onGenerate: () => void;
+  onGenerateAll: () => void;
 };
 
 export function PatternCards({
@@ -17,13 +18,14 @@ export function PatternCards({
   loading,
   onSelect,
   onBack,
-  onGenerate
+  onGenerate,
+  onGenerateAll
 }: Props) {
   return (
     <section className="rounded-2xl bg-white p-6 shadow-panel">
       <h2 className="text-xl font-bold text-slate-900">STEP3 構成案選択</h2>
       <p className="mt-2 text-sm text-slate-600">
-        3パターンから1つを選び、4コマとA4縦1ページ漫画の同時生成を開始します。
+        3パターンから1つを選ぶか、全構成案をバッチでまとめて生成できます。
       </p>
 
       <div className="mt-5 grid gap-4 md:grid-cols-3">
@@ -71,7 +73,15 @@ export function PatternCards({
           disabled={loading || !selectedPatternId}
           className="rounded-xl bg-brand-600 px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
         >
-          {loading ? "漫画生成中..." : "4コマ + A4縦1ページ漫画を生成"}
+          {loading ? "バッチ生成中..." : "選択中の構成案をバッチ生成"}
+        </button>
+        <button
+          type="button"
+          onClick={onGenerateAll}
+          disabled={loading || patterns.length === 0}
+          className="rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+        >
+          {loading ? "バッチ生成中..." : "全構成案をバッチ生成"}
         </button>
       </div>
     </section>
