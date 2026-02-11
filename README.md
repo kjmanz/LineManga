@@ -1,74 +1,95 @@
 # LINE投稿 漫画化エージェント
 
-LINE投稿文を入力すると、要点抽出→3パターン構成案→4コマ/A4漫画生成→修正再生成までを行う Next.js Webアプリです。
+LINE投稿文を入力し、要点抽出→3パターン構成案→4コマ/A4漫画生成→修正再生成まで行うWebアプリです。
 
-## 技術構成
+## 構成
 
-- Next.js (App Router) + TypeScript
-- Tailwind CSS
-- API Routes（`/api/summarize`, `/api/compose`, `/api/generate`, `/api/revise`）
-- Gemini API（テキスト + 画像生成）
+- フロントエンド: Next.js (App Router) + TypeScript + Tailwind
+- 配信: GitHub Pages（静的出力）
+- API: Cloudflare Workers
+- AI: Gemini API（テキスト + 画像）
 
-## セットアップ
+APIキーは Cloudflare Worker の Secret にのみ保持し、GitHub Pages 側には置きません。
 
-1. 依存関係をインストール
+## ローカル開発
+
+### 1) Frontend
 
 ```bash
 npm install
-```
-
-2. 環境変数を設定
-
-`.env.example` を `.env.local` にコピーして値を設定。
-
-```bash
 cp .env.example .env.local
 ```
 
-最低限必要:
+`.env.local`:
 
-- `GEMINI_API_KEY`
-- `GEMINI_TEXT_MODEL`（例: `gemini-3-pro`）
-- `GEMINI_IMAGE_MODEL`（例: `nano-banana-pro`）
+```env
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8787
+```
 
-注: モデルIDは契約・リージョン・時期で変わる場合があります。利用中のGemini APIで有効なIDに合わせてください。
-
-3. 開発サーバー起動
+起動:
 
 ```bash
 npm run dev
 ```
 
-ブラウザで `http://localhost:3000` を開きます。
+### 2) Worker
 
-## 画面フロー
+```bash
+cd worker
+npm install
+cp .dev.vars.example .dev.vars
+```
 
-1. `STEP1` 投稿文入力（参照画像アップロード可）
-2. `STEP2` 要点確認・編集
-3. `STEP3` 構成案3パターン選択
-4. `STEP4` 4コマ/A4プレビュー + ダウンロード
-5. `STEP5` 修正指示で再生成 + 比較
+`.dev.vars` に `GEMINI_API_KEY` を設定して起動:
+
+```bash
+npm run dev
+```
+
+Worker は通常 `http://127.0.0.1:8787` で待受します。
+
+## Cloudflare Workers デプロイ
+
+```bash
+cd worker
+npx wrangler login
+npx wrangler secret put GEMINI_API_KEY
+npm run deploy
+```
+
+必要なら追加:
+
+- `GEMINI_TEXT_MODEL`
+- `GEMINI_IMAGE_MODEL`
+- `ALLOWED_ORIGINS`（`,` 区切り）
+
+## GitHub Pages デプロイ
+
+1. GitHub の `Settings > Pages` で `GitHub Actions` を有効化  
+2. `Settings > Secrets and variables > Actions` に Repository Secret を追加  
+   `NEXT_PUBLIC_API_BASE_URL=https://<your-worker>.workers.dev`
+3. `main` へ push すると `.github/workflows/deploy-pages.yml` で自動デプロイ
+
+## 主要エンドポイント（Worker）
+
+- `POST /api/summarize`
+- `POST /api/compose`
+- `POST /api/generate`
+- `POST /api/revise`
+- `GET /api/health`
 
 ## ディレクトリ
 
 ```text
 src/
   app/
-    api/
-      summarize/route.ts
-      compose/route.ts
-      generate/route.ts
-      revise/route.ts
     layout.tsx
     page.tsx
   components/
-    InputForm.tsx
-    SummaryView.tsx
-    PatternCards.tsx
-    MangaPreview.tsx
-    RevisePanel.tsx
   lib/
-    gemini.ts
-    prompts.ts
     types.ts
+
+worker/
+  src/index.ts
+  wrangler.toml
 ```

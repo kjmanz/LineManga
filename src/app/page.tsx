@@ -12,6 +12,18 @@ type ApiError = {
   error?: string;
 };
 
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").trim().replace(/\/+$/, "");
+
+const resolveApiUrl = (path: string) => {
+  if (/^https?:\/\//.test(path)) {
+    return path;
+  }
+  if (!API_BASE_URL) {
+    return path;
+  }
+  return `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+};
+
 const STEP_LABELS = [
   "1. 投稿文入力",
   "2. 要点確認",
@@ -23,7 +35,7 @@ const STEP_LABELS = [
 const INITIAL_SUMMARY: SummaryResult = normalizeSummary(null);
 
 async function postJson<T>(url: string, payload: unknown): Promise<T> {
-  const response = await fetch(url, {
+  const response = await fetch(resolveApiUrl(url), {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -51,6 +63,7 @@ export default function Home() {
   const [generatedImageCount, setGeneratedImageCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isApiBaseConfigured = API_BASE_URL.length > 0;
 
   const selectedPattern = useMemo(
     () => patterns.find((pattern) => pattern.id === selectedPatternId) ?? null,
@@ -185,6 +198,12 @@ export default function Home() {
       {error ? (
         <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {error}
+        </p>
+      ) : null}
+
+      {!isApiBaseConfigured ? (
+        <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          `NEXT_PUBLIC_API_BASE_URL` が未設定です。Cloudflare WorkerのURLを設定してください。
         </p>
       ) : null}
 
