@@ -69,7 +69,41 @@ type GeminiResponse = {
   };
 };
 
+type GeminiModel = {
+  name?: string;
+  supportedGenerationMethods?: string[];
+};
+
+type GeminiListModelsResponse = {
+  models?: GeminiModel[];
+  nextPageToken?: string;
+  error?: {
+    message?: string;
+  };
+};
+
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+const DEFAULT_TEXT_MODEL = "gemini-3-flash-preview";
+const DEFAULT_IMAGE_MODEL = "gemini-3-pro-image-preview";
+const MODEL_LIST_CACHE_MS = 1000 * 60 * 10;
+const IMAGE_MODEL_ALIASES: Record<string, string> = {
+  "nano-banana-pro": DEFAULT_IMAGE_MODEL,
+  "nano-banana": DEFAULT_IMAGE_MODEL
+};
+const IMAGE_MODEL_PRIORITY = [
+  DEFAULT_IMAGE_MODEL,
+  "gemini-2.5-flash-image-preview",
+  "gemini-2.0-flash-preview-image-generation",
+  "gemini-2.0-flash-exp-image-generation",
+  "gemini-2.0-flash"
+];
+
+let geminiModelCache:
+  | {
+      expiresAt: number;
+      models: GeminiModel[];
+    }
+  | null = null;
 
 const TEXT_SYSTEM_PROMPT = `
 あなたは「地域密着の電気屋さん向け漫画コンテンツディレクター」です。
@@ -347,12 +381,99 @@ const parseJsonSafely = <T>(rawText: string): T => {
   }
 };
 
-const requestGemini = async (env: Env, model: string, body: Record<string, unknown>) => {
+const normalizeModelId = (model: string) => model.trim().replace(/^models\//i, "");
+
+const resolveImageModelAlias = (model: string) => {
+  const normalized = normalizeModelId(model);
+  return IMAGE_MODEL_ALIASES[normalized.toLowerCase()] ?? normalized;
+};
+
+const modelSupportsGenerateContent = (model: GeminiModel) =>
+  Array.isArray(model.supportedGenerationMethods) &&
+  model.supportedGenerationMethods.includes("generateContent");
+
+const listGeminiModels = async (env: Env, forceRefresh = false): Promise<GeminiModel[]> => {
   if (!env.GEMINI_API_KEY) {
     throw new Error("Cloudflare Worker secret `GEMINI_API_KEY` が未設定です。");
   }
 
-  const response = await fetch(`${API_BASE}/${model}:generateContent?key=${env.GEMINI_API_KEY}`, {
+  const now = Date.now();
+  if (!forceRefresh && geminiModelCache && geminiModelCache.expiresAt > now) {
+    return geminiModelCache.models;
+  }
+
+  const models: GeminiModel[] = [];
+  let pageToken: string | undefined;
+  for (let index = 0; index < 10; index += 1) {
+    const params = new URLSearchParams({ key: env.GEMINI_API_KEY });
+    if (pageToken) {
+      params.set("pageToken", pageToken);
+    }
+    const response = await fetch(`${API_BASE}?${params.toString()}`);
+    const data = (await response.json()) as GeminiListModelsResponse;
+    if (!response.ok) {
+      throw new Error(data.error?.message ?? "Geminiモデル一覧の取得に失敗しました。");
+    }
+    if (Array.isArray(data.models)) {
+      models.push(...data.models);
+    }
+    const next = data.nextPageToken?.trim();
+    if (!next) {
+      break;
+    }
+    pageToken = next;
+  }
+
+  geminiModelCache = {
+    expiresAt: now + MODEL_LIST_CACHE_MS,
+    models
+  };
+  return models;
+};
+
+const isRecoverableModelError = (message: string) =>
+  /not found|not supported for generatecontent|unsupported/i.test(message);
+
+const pickImageFallbackModel = (models: GeminiModel[], excludeModel: string) => {
+  const excluded = normalizeModelId(excludeModel).toLowerCase();
+  const uniqueIds: string[] = [];
+  const seen = new Set<string>();
+
+  for (const model of models) {
+    if (!modelSupportsGenerateContent(model) || !model.name) {
+      continue;
+    }
+    const modelId = normalizeModelId(model.name);
+    const lower = modelId.toLowerCase();
+    if (!modelId || lower === excluded || seen.has(lower)) {
+      continue;
+    }
+    seen.add(lower);
+    uniqueIds.push(modelId);
+  }
+
+  for (const preferred of IMAGE_MODEL_PRIORITY) {
+    const matched = uniqueIds.find((id) => id.toLowerCase() === preferred.toLowerCase());
+    if (matched) {
+      return matched;
+    }
+  }
+
+  const imageLike = uniqueIds.find((id) => /image|imagen/i.test(id));
+  if (imageLike) {
+    return imageLike;
+  }
+
+  return uniqueIds[0];
+};
+
+const requestGemini = async (env: Env, model: string, body: Record<string, unknown>) => {
+  if (!env.GEMINI_API_KEY) {
+    throw new Error("Cloudflare Worker secret `GEMINI_API_KEY` が未設定です。");
+  }
+  const modelId = normalizeModelId(model);
+
+  const response = await fetch(`${API_BASE}/${modelId}:generateContent?key=${env.GEMINI_API_KEY}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -411,7 +532,7 @@ const generateStructuredJson = async <T>({
   userPrompt: string;
   temperature?: number;
 }) => {
-  const model = env.GEMINI_TEXT_MODEL ?? "gemini-3-flash-preview";
+  const model = env.GEMINI_TEXT_MODEL ?? DEFAULT_TEXT_MODEL;
   const response = await requestGemini(env, model, {
     systemInstruction: {
       parts: [{ text: systemPrompt }]
@@ -471,8 +592,7 @@ const generateMangaImage = async ({
     parts.push(toInlinePartFromDataUrl(previousImageDataUrl));
   }
 
-  const model = env.GEMINI_IMAGE_MODEL ?? "nano-banana-pro";
-  const response = await requestGemini(env, model, {
+  const requestBody = {
     contents: [
       {
         role: "user",
@@ -483,7 +603,28 @@ const generateMangaImage = async ({
       temperature: 0.8,
       responseModalities: ["IMAGE", "TEXT"]
     }
-  });
+  } satisfies Record<string, unknown>;
+
+  const configuredModel = resolveImageModelAlias(env.GEMINI_IMAGE_MODEL ?? DEFAULT_IMAGE_MODEL);
+  let response: GeminiResponse;
+  try {
+    response = await requestGemini(env, configuredModel, requestBody);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Gemini API呼び出しに失敗しました。";
+    if (!isRecoverableModelError(message)) {
+      throw error;
+    }
+
+    const availableModels = await listGeminiModels(env, true);
+    const fallbackModel = pickImageFallbackModel(availableModels, configuredModel);
+    if (!fallbackModel) {
+      throw new Error(
+        `画像生成モデル '${configuredModel}' が利用できません。利用可能な generateContent 対応モデルを確認してください。`
+      );
+    }
+
+    response = await requestGemini(env, fallbackModel, requestBody);
+  }
 
   return extractImage(response);
 };
