@@ -1,54 +1,33 @@
 "use client";
 
-import { ChangeEvent } from "react";
-
 type Props = {
   postText: string;
   ownerReferenceDataUrl: string | null;
   wifeReferenceDataUrl: string | null;
+  referenceLoading: boolean;
+  referenceError: string | null;
   loading: boolean;
   onPostTextChange: (value: string) => void;
-  onOwnerReferenceChange: (value: string | null) => void;
-  onWifeReferenceChange: (value: string | null) => void;
   onSubmit: () => void;
-};
-
-const fileToDataUrl = (file: File) =>
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error("画像の読み込みに失敗しました。"));
-    reader.readAsDataURL(file);
-  });
-
-const handleFileChange = async (
-  event: ChangeEvent<HTMLInputElement>,
-  onChange: (value: string | null) => void
-) => {
-  const file = event.target.files?.[0];
-  if (!file) {
-    onChange(null);
-    return;
-  }
-  const dataUrl = await fileToDataUrl(file);
-  onChange(dataUrl);
 };
 
 export function InputForm({
   postText,
   ownerReferenceDataUrl,
   wifeReferenceDataUrl,
+  referenceLoading,
+  referenceError,
   loading,
   onPostTextChange,
-  onOwnerReferenceChange,
-  onWifeReferenceChange,
   onSubmit
 }: Props) {
+  const hasReferences = Boolean(ownerReferenceDataUrl && wifeReferenceDataUrl);
+
   return (
     <section className="rounded-2xl bg-white p-6 shadow-panel">
       <h2 className="text-xl font-bold text-slate-900">STEP1 投稿文入力</h2>
       <p className="mt-2 text-sm text-slate-600">
-        LINE投稿文を貼り付けて「要点を抽出する」を押してください。
+        LINE投稿文を貼り付けて「要点を抽出する」を押してください。店主/妻の参照画像は固定で自動適用されます。
       </p>
 
       <textarea
@@ -59,44 +38,33 @@ export function InputForm({
       />
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <label className="rounded-xl border border-slate-200 p-4 text-sm">
-          <div className="font-semibold text-slate-800">店主参照画像</div>
-          <input
-            className="mt-2 block w-full text-xs"
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            onChange={(event) => void handleFileChange(event, onOwnerReferenceChange)}
-          />
-          {ownerReferenceDataUrl ? (
-            <img src={ownerReferenceDataUrl} alt="店主参照" className="mt-3 h-24 rounded-lg object-cover" />
-          ) : (
-            <p className="mt-2 text-xs text-slate-500">未設定（アップロード推奨）</p>
-          )}
-        </label>
+        <div className="rounded-xl border border-slate-200 p-4 text-sm">
+          <div className="font-semibold text-slate-800">店主参照画像（固定）</div>
+          <img src="references/owner.png" alt="店主参照" className="mt-3 h-24 rounded-lg object-cover" />
+        </div>
 
-        <label className="rounded-xl border border-slate-200 p-4 text-sm">
-          <div className="font-semibold text-slate-800">妻参照画像</div>
-          <input
-            className="mt-2 block w-full text-xs"
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            onChange={(event) => void handleFileChange(event, onWifeReferenceChange)}
-          />
-          {wifeReferenceDataUrl ? (
-            <img src={wifeReferenceDataUrl} alt="妻参照" className="mt-3 h-24 rounded-lg object-cover" />
-          ) : (
-            <p className="mt-2 text-xs text-slate-500">未設定（アップロード推奨）</p>
-          )}
-        </label>
+        <div className="rounded-xl border border-slate-200 p-4 text-sm">
+          <div className="font-semibold text-slate-800">妻参照画像（固定）</div>
+          <img src="references/wife.png" alt="妻参照" className="mt-3 h-24 rounded-lg object-cover" />
+        </div>
       </div>
+
+      {referenceLoading ? (
+        <p className="mt-3 text-xs text-slate-500">固定参照画像を読み込み中...</p>
+      ) : null}
+      {referenceError ? (
+        <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+          {referenceError}
+        </p>
+      ) : null}
 
       <button
         type="button"
         onClick={onSubmit}
-        disabled={loading}
+        disabled={loading || !hasReferences}
         className="mt-5 rounded-xl bg-brand-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300"
       >
-        {loading ? "要点抽出中..." : "要点を抽出する"}
+        {loading ? "要点抽出中..." : referenceLoading ? "参照画像読込中..." : "要点を抽出する"}
       </button>
     </section>
   );

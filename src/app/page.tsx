@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { InputForm } from "@/components/InputForm";
 import { MangaPreview } from "@/components/MangaPreview";
 import { PatternCards } from "@/components/PatternCards";
@@ -33,6 +33,24 @@ const STEP_LABELS = [
 ];
 
 const INITIAL_SUMMARY: SummaryResult = normalizeSummary(null);
+const OWNER_REFERENCE_PATH = "references/owner.png";
+const WIFE_REFERENCE_PATH = "references/wife.png";
+
+const blobToDataUrl = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error("固定参照画像の読み込みに失敗しました。"));
+    reader.readAsDataURL(blob);
+  });
+
+const imagePathToDataUrl = async (path: string) => {
+  const response = await fetch(path);
+  if (!response.ok) {
+    throw new Error(`固定参照画像の取得に失敗しました: ${path}`);
+  }
+  return blobToDataUrl(await response.blob());
+};
 
 async function postJson<T>(url: string, payload: unknown): Promise<T> {
   const response = await fetch(resolveApiUrl(url), {
@@ -60,6 +78,8 @@ export default function Home() {
   const [revisedGeneration, setRevisedGeneration] = useState<GenerationResult | null>(null);
   const [ownerReferenceDataUrl, setOwnerReferenceDataUrl] = useState<string | null>(null);
   const [wifeReferenceDataUrl, setWifeReferenceDataUrl] = useState<string | null>(null);
+  const [referenceLoading, setReferenceLoading] = useState(true);
+  const [referenceError, setReferenceError] = useState<string | null>(null);
   const [generatedImageCount, setGeneratedImageCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +89,43 @@ export default function Home() {
     () => patterns.find((pattern) => pattern.id === selectedPatternId) ?? null,
     [patterns, selectedPatternId]
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadFixedReferences = async () => {
+      try {
+        setReferenceError(null);
+        setReferenceLoading(true);
+        const [ownerDataUrl, wifeDataUrl] = await Promise.all([
+          imagePathToDataUrl(OWNER_REFERENCE_PATH),
+          imagePathToDataUrl(WIFE_REFERENCE_PATH)
+        ]);
+        if (cancelled) {
+          return;
+        }
+        setOwnerReferenceDataUrl(ownerDataUrl);
+        setWifeReferenceDataUrl(wifeDataUrl);
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+        setOwnerReferenceDataUrl(null);
+        setWifeReferenceDataUrl(null);
+        setReferenceError(err instanceof Error ? err.message : "固定参照画像の読込に失敗しました。");
+      } finally {
+        if (!cancelled) {
+          setReferenceLoading(false);
+        }
+      }
+    };
+
+    void loadFixedReferences();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSummarize = async () => {
     try {
@@ -213,10 +270,10 @@ export default function Home() {
             postText={postText}
             ownerReferenceDataUrl={ownerReferenceDataUrl}
             wifeReferenceDataUrl={wifeReferenceDataUrl}
+            referenceLoading={referenceLoading}
+            referenceError={referenceError}
             loading={loading}
             onPostTextChange={setPostText}
-            onOwnerReferenceChange={setOwnerReferenceDataUrl}
-            onWifeReferenceChange={setWifeReferenceDataUrl}
             onSubmit={handleSummarize}
           />
         ) : null}
