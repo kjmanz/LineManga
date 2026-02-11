@@ -22,6 +22,7 @@ export type A4Flow = {
 };
 
 export type PatternType = "共感型" | "驚き型" | "体験談型";
+export type GenerationMode = "batch" | "standard";
 
 export type CompositionPattern = {
   id: string;

@@ -1,6 +1,6 @@
 "use client";
 
-import type { CompositionPattern } from "@/lib/types";
+import type { CompositionPattern, GenerationMode } from "@/lib/types";
 
 type Props = {
   patterns: CompositionPattern[];
@@ -10,6 +10,7 @@ type Props = {
   onBack: () => void;
   onGenerate: () => void;
   onGenerateAll: () => void;
+  generationMode: GenerationMode;
 };
 
 export function PatternCards({
@@ -19,13 +20,16 @@ export function PatternCards({
   onSelect,
   onBack,
   onGenerate,
-  onGenerateAll
+  onGenerateAll,
+  generationMode
 }: Props) {
+  const isBatchMode = generationMode === "batch";
+
   return (
     <section className="rounded-2xl bg-white p-6 shadow-panel">
       <h2 className="text-xl font-bold text-slate-900">STEP3 構成案選択</h2>
       <p className="mt-2 text-sm text-slate-600">
-        3パターンから1つを選ぶか、全構成案をバッチでまとめて生成できます。
+        3パターンから1つを選んで生成します。全構成案の一括生成はBatchモードで利用できます。
       </p>
 
       <div className="mt-5 grid gap-4 md:grid-cols-3">
@@ -73,17 +77,28 @@ export function PatternCards({
           disabled={loading || !selectedPatternId}
           className="rounded-xl bg-brand-600 px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
         >
-          {loading ? "バッチ生成中..." : "選択中の構成案をバッチ生成"}
+          {loading
+            ? isBatchMode
+              ? "バッチ生成中..."
+              : "通常生成中..."
+            : isBatchMode
+            ? "選択中の構成案をバッチ生成"
+            : "選択中の構成案を通常生成"}
         </button>
         <button
           type="button"
           onClick={onGenerateAll}
-          disabled={loading || patterns.length === 0}
+          disabled={loading || patterns.length === 0 || !isBatchMode}
           className="rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
         >
           {loading ? "バッチ生成中..." : "全構成案をバッチ生成"}
         </button>
       </div>
+      {!isBatchMode ? (
+        <p className="mt-3 text-xs text-slate-500">
+          全構成案の一括生成はBatchモード選択時のみ利用できます。
+        </p>
+      ) : null}
     </section>
   );
 }

@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { GenerationResult } from "@/lib/types";
+import type { GenerationMode, GenerationResult } from "@/lib/types";
 
 type Props = {
   previousResult: GenerationResult;
   revisedResult: GenerationResult | null;
   loading: boolean;
+  mode: GenerationMode;
   onBack: () => void;
   onRevise: (instruction: string) => void;
   onAdoptRevised: () => void;
@@ -16,11 +17,13 @@ export function RevisePanel({
   previousResult,
   revisedResult,
   loading,
+  mode,
   onBack,
   onRevise,
   onAdoptRevised
 }: Props) {
   const [instruction, setInstruction] = useState("");
+  const isBatchMode = mode === "batch";
 
   return (
     <section className="rounded-2xl bg-white p-6 shadow-panel">
@@ -50,7 +53,13 @@ export function RevisePanel({
           onClick={() => onRevise(instruction)}
           className="rounded-xl bg-brand-600 px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
         >
-          {loading ? "バッチ再生成中..." : "修正してバッチ再生成"}
+          {loading
+            ? isBatchMode
+              ? "バッチ再生成中..."
+              : "通常再生成中..."
+            : isBatchMode
+            ? "修正してバッチ再生成"
+            : "修正して通常再生成"}
         </button>
         {revisedResult ? (
           <button
