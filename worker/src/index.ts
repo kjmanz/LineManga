@@ -227,9 +227,9 @@ const cleanText = (value: unknown, fallback: string) =>
 const cleanList = (value: unknown, fallback: string[]) =>
   Array.isArray(value)
     ? value
-        .filter((item) => typeof item === "string")
-        .map((item) => item.trim())
-        .filter(Boolean)
+      .filter((item) => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean)
     : fallback;
 
 const normalizeSummary = (raw: unknown): SummaryResult => {
@@ -392,8 +392,8 @@ const extractImage = (response: GeminiResponse) => {
         "mimeType" in inline && typeof inline.mimeType === "string"
           ? inline.mimeType
           : "mime_type" in inline && typeof inline.mime_type === "string"
-          ? inline.mime_type
-          : "image/png";
+            ? inline.mime_type
+            : "image/png";
       return `data:${mimeType};base64,${inline.data}`;
     }
   }
@@ -411,7 +411,7 @@ const generateStructuredJson = async <T>({
   userPrompt: string;
   temperature?: number;
 }) => {
-  const model = env.GEMINI_TEXT_MODEL ?? "gemini-3-pro";
+  const model = env.GEMINI_TEXT_MODEL ?? "gemini-3-flash-preview";
   const response = await requestGemini(env, model, {
     systemInstruction: {
       parts: [{ text: systemPrompt }]

@@ -3,6 +3,6 @@ main = "src/index.ts"
 compatibility_date = "2026-02-11"
 
 [vars]
-GEMINI_TEXT_MODEL = "gemini-3-pro"
+GEMINI_TEXT_MODEL = "gemini-3-flash-preview"
 GEMINI_IMAGE_MODEL = "nano-banana-pro"
 ALLOWED_ORIGINS = "https://kjmanz.github.io"
