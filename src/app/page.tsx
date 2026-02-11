@@ -12,6 +12,16 @@ type ApiError = {
   error?: string;
 };
 
+class HttpError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "HttpError";
+    this.status = status;
+  }
+}
+
 type MangaLayout = "four-panel-square" | "a4-vertical";
 
 type BatchStartResponse = {
@@ -92,7 +102,7 @@ async function postJson<T>(url: string, payload: unknown): Promise<T> {
 
   const data = (await response.json()) as T & ApiError;
   if (!response.ok) {
-    throw new Error(data.error ?? "API呼び出しに失敗しました。");
+    throw new HttpError(response.status, data.error ?? `API呼び出しに失敗しました。(${response.status})`);
   }
   return data;
 }
@@ -139,6 +149,16 @@ const toPatternGenerationMap = (results: BatchImageResult[]): PatternGenerationM
   }
 
   return map;
+};
+
+const toBatchApiErrorMessage = (error: unknown, endpoint: string, fallback: string) => {
+  if (error instanceof HttpError && error.status === 404) {
+    return `Worker APIが旧版です。${endpoint} が見つかりません。Workerを最新コードで再デプロイしてください。`;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return fallback;
 };
 
 export default function Home() {
@@ -305,7 +325,8 @@ export default function Home() {
       setBatchStatusMessage("バッチ生成が完了しました。");
       setStep(4);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "バッチ生成に失敗しました。");
+      setBatchStatusMessage(null);
+      setError(toBatchApiErrorMessage(err, "/api/batch-generate", "バッチ生成に失敗しました。"));
     } finally {
       setLoading(false);
     }
@@ -352,7 +373,10 @@ export default function Home() {
       setBatchStatusMessage("全構成案バッチ生成が完了しました。");
       setStep(4);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "全構成案バッチ生成に失敗しました。");
+      setBatchStatusMessage(null);
+      setError(
+        toBatchApiErrorMessage(err, "/api/batch-generate-all", "全構成案バッチ生成に失敗しました。")
+      );
     } finally {
       setLoading(false);
     }
@@ -387,7 +411,8 @@ export default function Home() {
       setGeneratedImageCount((count) => count + results.length);
       setBatchStatusMessage("修正再生成バッチが完了しました。");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "修正再生成バッチに失敗しました。");
+      setBatchStatusMessage(null);
+      setError(toBatchApiErrorMessage(err, "/api/batch-revise", "修正再生成バッチに失敗しました。"));
     } finally {
       setLoading(false);
     }
