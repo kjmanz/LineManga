@@ -167,6 +167,8 @@ const FILE_UPLOAD_API = "https://generativelanguage.googleapis.com/upload/v1beta
 const DEFAULT_TEXT_MODEL = "gemini-3-flash-preview";
 const DEFAULT_IMAGE_MODEL = "gemini-3-pro-image-preview";
 const MODEL_LIST_CACHE_MS = 1000 * 60 * 10;
+const GEMINI_MAX_RETRIES = 3;
+const GEMINI_RETRY_BASE_DELAY_MS = 1200;
 const BATCH_POLL_INTERVAL_MS = 5000;
 const BATCH_PATTERNS_PER_JOB = 1;
 const BATCH_FILE_MIME_TYPE = "application/jsonl";
@@ -474,6 +476,44 @@ const resolveImageModelAlias = (model: string) => {
   return IMAGE_MODEL_ALIASES[normalized.toLowerCase()] ?? normalized;
 };
 
+const wait = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+const parseGeminiResponseText = (rawText: string): GeminiResponse | null => {
+  const trimmed = rawText.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(trimmed) as GeminiResponse;
+  } catch {
+    return null;
+  }
+};
+
+const buildGeminiErrorMessage = (status: number, response: GeminiResponse | null, rawText: string) => {
+  const apiMessage = response?.error?.message?.trim();
+  if (apiMessage) {
+    return apiMessage;
+  }
+
+  const trimmed = rawText.trim();
+  if (trimmed) {
+    return `Gemini API呼び出しに失敗しました。(${status}) ${trimmed.slice(0, 200)}`;
+  }
+
+  return `Gemini API呼び出しに失敗しました。(${status})`;
+};
+
+const isRetryableGeminiError = (status: number, message: string) =>
+  [408, 409, 425, 429, 500, 502, 503, 504].includes(status) ||
+  /high demand|spikes in demand|try again later|resource[_\s-]*exhausted|rate limit|temporarily unavailable|overloaded|backend error/i.test(
+    message
+  );
+
 const modelSupportsGenerateContent = (model: GeminiModel) =>
   Array.isArray(model.supportedGenerationMethods) &&
   model.supportedGenerationMethods.includes("generateContent");
@@ -587,22 +627,39 @@ const requestGemini = async (env: Env, model: string, body: Record<string, unkno
   }
   const modelId = normalizeModelId(model);
 
-  const response = await fetch(`${API_BASE}/${modelId}:generateContent?key=${env.GEMINI_API_KEY}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(body)
-  });
+  for (let attempt = 0; attempt <= GEMINI_MAX_RETRIES; attempt += 1) {
+    const response = await fetch(`${API_BASE}/${modelId}:generateContent?key=${env.GEMINI_API_KEY}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+    const rawText = await response.text();
+    const data = parseGeminiResponseText(rawText);
 
-  const data = (await response.json()) as GeminiResponse;
-  if (!response.ok) {
-    throw new Error(data.error?.message ?? "Gemini API呼び出しに失敗しました。");
+    if (response.ok && data) {
+      if (data.promptFeedback?.blockReason) {
+        throw new Error(`生成がブロックされました: ${data.promptFeedback.blockReason}`);
+      }
+      return data;
+    }
+
+    const message = response.ok
+      ? "Gemini API応答の解析に失敗しました。"
+      : buildGeminiErrorMessage(response.status, data, rawText);
+    const canRetry =
+      attempt < GEMINI_MAX_RETRIES &&
+      (response.ok ? true : isRetryableGeminiError(response.status, message));
+    if (!canRetry) {
+      throw new Error(message);
+    }
+
+    const delayMs = GEMINI_RETRY_BASE_DELAY_MS * 2 ** attempt;
+    await wait(delayMs);
   }
-  if (data.promptFeedback?.blockReason) {
-    throw new Error(`生成がブロックされました: ${data.promptFeedback.blockReason}`);
-  }
-  return data;
+
+  throw new Error("Gemini API呼び出しに失敗しました。");
 };
 
 const extractText = (response: GeminiResponse) => {
