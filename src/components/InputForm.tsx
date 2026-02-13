@@ -42,28 +42,24 @@ export function InputForm({
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <div className="rounded-xl border border-slate-200 p-4 text-sm">
           <div className="font-semibold text-slate-800">店主参照画像（固定）</div>
-          <div className="mt-3 h-24 overflow-hidden rounded-lg bg-slate-100">
-            {referenceLoading ? (
-              <div className="flex h-full items-center justify-center">
-                <Spinner size="sm" className="text-slate-400" />
-              </div>
-            ) : (
-              <img src="references/owner.png" alt="店主参照" className="h-24 w-full object-cover" />
-            )}
-          </div>
+          {referenceLoading ? (
+            <div className="mt-3 flex h-24 items-center justify-center rounded-lg bg-slate-100">
+              <Spinner size="sm" className="text-slate-400" />
+            </div>
+          ) : (
+            <img src="references/owner.png" alt="店主参照" className="mt-3 h-24 rounded-lg object-cover" />
+          )}
         </div>
 
         <div className="rounded-xl border border-slate-200 p-4 text-sm">
           <div className="font-semibold text-slate-800">妻参照画像（固定）</div>
-          <div className="mt-3 h-24 overflow-hidden rounded-lg bg-slate-100">
-            {referenceLoading ? (
-              <div className="flex h-full items-center justify-center">
-                <Spinner size="sm" className="text-slate-400" />
-              </div>
-            ) : (
-              <img src="references/wife.png" alt="妻参照" className="h-24 w-full object-cover" />
-            )}
-          </div>
+          {referenceLoading ? (
+            <div className="mt-3 flex h-24 items-center justify-center rounded-lg bg-slate-100">
+              <Spinner size="sm" className="text-slate-400" />
+            </div>
+          ) : (
+            <img src="references/wife.png" alt="妻参照" className="mt-3 h-24 rounded-lg object-cover" />
+          )}
         </div>
       </div>
 
