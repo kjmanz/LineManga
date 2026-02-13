@@ -1,5 +1,6 @@
 "use client";
 
+import { Spinner } from "./Spinner";
 import type { SummaryResult } from "@/lib/types";
 
 type Props = {
@@ -154,7 +155,8 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
         <button
           type="button"
           onClick={onBack}
-          className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
+          disabled={loading}
+          className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"
         >
           STEP1へ戻る
         </button>
@@ -162,9 +164,16 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
           type="button"
           onClick={onNext}
           disabled={loading}
-          className="rounded-xl bg-brand-600 px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+          className="flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
         >
-          {loading ? "構成案生成中..." : "構成案3パターンを生成"}
+          {loading ? (
+            <>
+              <Spinner size="sm" className="text-white" />
+              <span>構成案生成中...</span>
+            </>
+          ) : (
+            <span>構成案3パターンを生成</span>
+          )}
         </button>
       </div>
     </section>

@@ -1,5 +1,6 @@
 "use client";
 
+import { Spinner } from "./Spinner";
 import type { CompositionPattern, GenerationMode } from "@/lib/types";
 
 type Props = {
@@ -67,7 +68,8 @@ export function PatternCards({
         <button
           type="button"
           onClick={onBack}
-          className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
+          disabled={loading}
+          className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"
         >
           STEP2へ戻る
         </button>
@@ -75,23 +77,31 @@ export function PatternCards({
           type="button"
           onClick={onGenerate}
           disabled={loading || !selectedPatternId}
-          className="rounded-xl bg-brand-600 px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+          className="flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
         >
-          {loading
-            ? isBatchMode
-              ? "バッチ生成中..."
-              : "通常生成中..."
-            : isBatchMode
-            ? "選択中の構成案をバッチ生成"
-            : "選択中の構成案を通常生成"}
+          {loading ? (
+            <>
+              <Spinner size="sm" className="text-white" />
+              <span>{isBatchMode ? "バッチ生成中..." : "通常生成中..."}</span>
+            </>
+          ) : (
+            <span>{isBatchMode ? "選択中の構成案をバッチ生成" : "選択中の構成案を通常生成"}</span>
+          )}
         </button>
         <button
           type="button"
           onClick={onGenerateAll}
           disabled={loading || patterns.length === 0 || !isBatchMode}
-          className="rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+          className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
         >
-          {loading ? "バッチ生成中..." : "全構成案をバッチ生成"}
+          {loading ? (
+            <>
+              <Spinner size="sm" className="text-white" />
+              <span>バッチ生成中...</span>
+            </>
+          ) : (
+            <span>全構成案をバッチ生成</span>
+          )}
         </button>
       </div>
       {!isBatchMode ? (

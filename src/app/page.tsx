@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { GenerationSettings } from "@/components/GenerationSettings";
 import { InputForm } from "@/components/InputForm";
 import { MangaPreview } from "@/components/MangaPreview";
 import { PatternCards } from "@/components/PatternCards";
 import { RevisePanel } from "@/components/RevisePanel";
+import { Spinner } from "@/components/Spinner";
 import { SummaryView } from "@/components/SummaryView";
 import {
   normalizeSummary,
@@ -87,10 +89,84 @@ const STEP_LABELS = [
 const INITIAL_SUMMARY: SummaryResult = normalizeSummary(null);
 const OWNER_REFERENCE_PATH = "references/owner.png";
 const WIFE_REFERENCE_PATH = "references/wife.png";
+
+const saveAutosaveState = (state: AutosaveState) => {
+  try {
+    // 画像データは大きいため保存しない（generation, generationByPatternId, revisedGenerationの画像部分を除外）
+    const stateToSave: AutosaveState = {
+      ...state,
+      generation: state.generation
+        ? {
+            ...state.generation,
+            fourPanelImageDataUrl: "",
+            a4ImageDataUrl: ""
+          }
+        : null,
+      generationByPatternId: Object.fromEntries(
+        Object.entries(state.generationByPatternId).map(([id, gen]) => [
+          id,
+          {
+            ...gen,
+            fourPanelImageDataUrl: "",
+            a4ImageDataUrl: ""
+          }
+        ])
+      ),
+      revisedGeneration: state.revisedGeneration
+        ? {
+            ...state.revisedGeneration,
+            fourPanelImageDataUrl: "",
+            a4ImageDataUrl: ""
+          }
+        : null
+    };
+    window.localStorage.setItem(AUTOSAVE_STORAGE_KEY, JSON.stringify(stateToSave));
+  } catch {
+    // LocalStorage容量超過などのエラーは無視
+  }
+};
+
+const loadAutosaveState = (): AutosaveState | null => {
+  try {
+    const saved = window.localStorage.getItem(AUTOSAVE_STORAGE_KEY);
+    if (!saved) {
+      return null;
+    }
+    const parsed = JSON.parse(saved) as AutosaveState;
+    // 妥当性チェック
+    if (typeof parsed.step !== "number" || parsed.step < 1 || parsed.step > 5) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+const clearAutosaveState = () => {
+  try {
+    window.localStorage.removeItem(AUTOSAVE_STORAGE_KEY);
+  } catch {
+    // エラーは無視
+  }
+};
 const BATCH_POLL_INTERVAL_MS = 5000;
 const BATCH_WARNING_MS = 3 * 60 * 1000;
 const BATCH_TIMEOUT_MS = 10 * 60 * 1000;
 const GENERATION_MODE_STORAGE_KEY = "line-manga-generation-mode";
+const AUTOSAVE_STORAGE_KEY = "line-manga-autosave";
+
+type AutosaveState = {
+  step: number;
+  postText: string;
+  summary: SummaryResult;
+  patterns: CompositionPattern[];
+  selectedPatternId: string | null;
+  generation: GenerationResult | null;
+  generationByPatternId: PatternGenerationMap;
+  revisedGeneration: GenerationResult | null;
+  generatedImageCount: number;
+};
 
 const blobToDataUrl = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
@@ -197,6 +273,8 @@ export default function Home() {
   const [batchWarningMessage, setBatchWarningMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showResetDialog, setShowResetDialog] = useState(false);
+  const [autosaveLoaded, setAutosaveLoaded] = useState(false);
   const isApiBaseConfigured = API_BASE_URL.length > 0;
 
   const selectedPattern = useMemo(
@@ -216,6 +294,55 @@ export default function Home() {
   useEffect(() => {
     window.localStorage.setItem(GENERATION_MODE_STORAGE_KEY, generationMode);
   }, [generationMode]);
+
+  // オートセーブ復元
+  useEffect(() => {
+    const saved = loadAutosaveState();
+    if (saved) {
+      setStep(saved.step);
+      setPostText(saved.postText);
+      setSummary(saved.summary);
+      setPatterns(saved.patterns);
+      setSelectedPatternId(saved.selectedPatternId);
+      setGeneratedImageCount(saved.generatedImageCount);
+      // 画像データは保存されていないので復元しない
+    }
+    setAutosaveLoaded(true);
+  }, []);
+
+  // オートセーブ保存
+  useEffect(() => {
+    if (!autosaveLoaded) {
+      return;
+    }
+    saveAutosaveState({
+      step,
+      postText,
+      summary,
+      patterns,
+      selectedPatternId,
+      generation,
+      generationByPatternId,
+      revisedGeneration,
+      generatedImageCount
+    });
+  }, [step, postText, summary, patterns, selectedPatternId, generation, generationByPatternId, revisedGeneration, generatedImageCount, autosaveLoaded]);
+
+  const handleReset = useCallback(() => {
+    clearAutosaveState();
+    setStep(1);
+    setPostText("");
+    setSummary(INITIAL_SUMMARY);
+    setPatterns([]);
+    setSelectedPatternId(null);
+    setGeneration(null);
+    setGenerationByPatternId({});
+    setRevisedGeneration(null);
+    setGeneratedImageCount(0);
+    setError(null);
+    clearBatchMessages();
+    setShowResetDialog(false);
+  }, []);
 
   const clearBatchMessages = () => {
     setBatchStatusMessage(null);
@@ -607,12 +734,39 @@ export default function Home() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8 md:px-8">
-      <header className="rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-panel backdrop-blur">
-        <h1 className="text-2xl font-black text-slate-900 md:text-3xl">LINE投稿 漫画化エージェント</h1>
-        <p className="mt-2 text-sm text-slate-600">
-          LINE投稿文から「4コマ(1080x1080)」と「A4縦1ページ漫画(2480x3508)」を同時生成します。
-        </p>
+      <header className="flex items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-panel backdrop-blur">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900 md:text-3xl">LINE投稿 漫画化エージェント</h1>
+          <p className="mt-2 text-sm text-slate-600">
+            LINE投稿文から「4コマ(1080x1080)」と「A4縦1ページ漫画(2480x3508)」を同時生成します。
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowResetDialog(true)}
+          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+          disabled={step === 1 && !postText}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+            <path
+              fillRule="evenodd"
+              d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0v2.43l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z"
+              clipRule="evenodd"
+            />
+          </svg>
+          <span className="hidden sm:inline">新規作成</span>
+        </button>
       </header>
+
+      <ConfirmDialog
+        open={showResetDialog}
+        title="新規作成の確認"
+        message="入力内容と生成履歴をすべて削除して新規作成しますか？"
+        confirmLabel="新規作成"
+        cancelLabel="キャンセル"
+        onConfirm={handleReset}
+        onCancel={() => setShowResetDialog(false)}
+      />
       <GenerationSettings mode={generationMode} loading={loading} onChange={handleGenerationModeChange} />
 
       <ol className="mt-5 grid gap-2 rounded-xl bg-slate-900 p-3 text-xs text-white md:grid-cols-5 md:text-sm">

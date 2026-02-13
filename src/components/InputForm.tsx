@@ -1,5 +1,7 @@
 "use client";
 
+import { Spinner } from "./Spinner";
+
 type Props = {
   postText: string;
   ownerReferenceDataUrl: string | null;
@@ -40,18 +42,31 @@ export function InputForm({
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <div className="rounded-xl border border-slate-200 p-4 text-sm">
           <div className="font-semibold text-slate-800">店主参照画像（固定）</div>
-          <img src="references/owner.png" alt="店主参照" className="mt-3 h-24 rounded-lg object-cover" />
+          <div className="mt-3 h-24 overflow-hidden rounded-lg bg-slate-100">
+            {referenceLoading ? (
+              <div className="flex h-full items-center justify-center">
+                <Spinner size="sm" className="text-slate-400" />
+              </div>
+            ) : (
+              <img src="references/owner.png" alt="店主参照" className="h-24 w-full object-cover" />
+            )}
+          </div>
         </div>
 
         <div className="rounded-xl border border-slate-200 p-4 text-sm">
           <div className="font-semibold text-slate-800">妻参照画像（固定）</div>
-          <img src="references/wife.png" alt="妻参照" className="mt-3 h-24 rounded-lg object-cover" />
+          <div className="mt-3 h-24 overflow-hidden rounded-lg bg-slate-100">
+            {referenceLoading ? (
+              <div className="flex h-full items-center justify-center">
+                <Spinner size="sm" className="text-slate-400" />
+              </div>
+            ) : (
+              <img src="references/wife.png" alt="妻参照" className="h-24 w-full object-cover" />
+            )}
+          </div>
         </div>
       </div>
 
-      {referenceLoading ? (
-        <p className="mt-3 text-xs text-slate-500">固定参照画像を読み込み中...</p>
-      ) : null}
       {referenceError ? (
         <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
           {referenceError}
@@ -61,10 +76,17 @@ export function InputForm({
       <button
         type="button"
         onClick={onSubmit}
-        disabled={loading || !hasReferences}
-        className="mt-5 rounded-xl bg-brand-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+        disabled={loading || referenceLoading || !hasReferences}
+        className="mt-5 flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300"
       >
-        {loading ? "要点抽出中..." : referenceLoading ? "参照画像読込中..." : "要点を抽出する"}
+        {loading ? (
+          <>
+            <Spinner size="sm" className="text-white" />
+            <span>要点抽出中...</span>
+          </>
+        ) : (
+          <span>要点を抽出する</span>
+        )}
       </button>
     </section>
   );
