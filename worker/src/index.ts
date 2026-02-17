@@ -197,7 +197,7 @@ const TEXT_SYSTEM_PROMPT = `
 あなたは「地域密着の電気屋さん向け漫画コンテンツディレクター」です。
 対象読者は50代以上の地域のお客様です。
 読みやすく、親しみやすく、短いセリフで伝えてください。
-必ず行動導線（CTA）を含めてください。
+CTA（連絡誘導や行動喚起）は含めないでください。
 出力は指定したJSON形式のみで返答してください。
 `.trim();
 
@@ -210,7 +210,7 @@ LINE投稿文:
 必須要件:
 - 投稿文から逸脱しないこと
 - 50代以上の読者に伝わる言葉に言い換えること
-- CTA候補を3つ以上入れること
+- CTA候補は空配列にすること
 
 次のJSONを必ず返してください:
 {
@@ -219,7 +219,7 @@ LINE投稿文:
   "painPoints": ["困りごと1", "困りごと2"],
   "keyFacts": ["事実1", "事実2"],
   "solutionMessage": "店主としての提案",
-  "ctaCandidates": ["LINE返信", "電話相談", "来店予約"],
+  "ctaCandidates": [],
   "toneNotes": "話し方の方針"
 }
 `.trim();
@@ -237,9 +237,9 @@ ${JSON.stringify(summary, null, 2)}
   1コマ目: 状況きっかけ
   2コマ目: 困りごと共感
   3コマ目: 店主の解決策
-  4コマ目: オチ+CTA
-- A4縦は4コマ形式を禁止し、1ページ漫画として「導入・共感・解決・行動」の順で設計する
-- CTAは必ず入れる
+  4コマ目: オチ
+- A4縦は4コマ形式を禁止し、1ページ漫画として「導入・共感・解決・締め」の順で設計する
+- CTAや連絡誘導文は入れない
 - セリフは短く、スマホ可読性を優先
 
 次のJSONを返してください:
@@ -259,9 +259,9 @@ ${JSON.stringify(summary, null, 2)}
         "intro": "導入",
         "empathy": "共感",
         "solution": "解決",
-        "action": "行動"
+        "action": "締め"
       },
-      "cta": "CTA文言"
+      "cta": ""
     }
   ]
 }
@@ -318,7 +318,6 @@ style固定: cute chibi style, pop color, Japanese manga
 - 想定読者: ${summary.targetPersona}
 - 困りごと: ${summary.painPoints.join(" / ")}
 - 解決メッセージ: ${summary.solutionMessage}
-- CTA候補: ${summary.ctaCandidates.join(" / ")}
 
 選択構成:
 - 切り口: ${pattern.patternType}
@@ -329,14 +328,13 @@ ${panelText(pattern)}
   - 導入: ${pattern.a4Flow.intro}
   - 共感: ${pattern.a4Flow.empathy}
   - 解決: ${pattern.a4Flow.solution}
-  - 行動: ${pattern.a4Flow.action}
-- 最終CTA: ${pattern.cta}
+  - 締め: ${pattern.a4Flow.action}
 
 画像要件:
 - ${sizeInstruction}
 - ${layoutInstruction}
 - 日本語テキストを入れる。セリフは短く簡潔。
-- 最後に必ずCTAを明示。
+- CTA（LINE返信・電話相談・来店予約などの連絡誘導）は入れない。
 - 投稿内容から逸脱しない。
 
 ${revisionBlock}
@@ -356,11 +354,7 @@ const cleanList = (value: unknown, fallback: string[]) =>
 
 const normalizeSummary = (raw: unknown): SummaryResult => {
   const source = (raw ?? {}) as Record<string, unknown>;
-  const ctaCandidates = cleanList(source.ctaCandidates, [
-    "LINEで返信してください",
-    "お電話でご相談ください",
-    "ご来店予約をお願いします"
-  ]);
+  const ctaCandidates = cleanList(source.ctaCandidates, []);
 
   return {
     mainTheme: cleanText(source.mainTheme, "季節の家電相談"),
@@ -371,7 +365,7 @@ const normalizeSummary = (raw: unknown): SummaryResult => {
       source.solutionMessage,
       "店主が状況に合わせて分かりやすく提案します"
     ),
-    ctaCandidates: ctaCandidates.length > 0 ? ctaCandidates : ["LINEで返信してください"],
+    ctaCandidates,
     toneNotes: cleanText(source.toneNotes, "やさしく親しみやすい口調")
   };
 };
@@ -397,7 +391,7 @@ const normalizeA4Flow = (raw: unknown): A4Flow => {
     intro: cleanText(source.intro, "導入: お客様の状況説明"),
     empathy: cleanText(source.empathy, "共感: 困りごとへの寄り添い"),
     solution: cleanText(source.solution, "解決: 店主の提案"),
-    action: cleanText(source.action, "行動: LINE返信か電話相談へ")
+    action: cleanText(source.action, "締め: 安心感のある一言")
   };
 };
 
@@ -427,7 +421,7 @@ const normalizePatterns = (raw: unknown): CompositionPattern[] => {
         normalizePanel(panels[3], 4)
       ] as [MangaPanel, MangaPanel, MangaPanel, MangaPanel],
       a4Flow: normalizeA4Flow(pattern.a4Flow),
-      cta: cleanText(pattern.cta, "LINEで返信してください")
+      cta: cleanText(pattern.cta, "")
     } satisfies CompositionPattern;
   });
 
@@ -446,7 +440,7 @@ const normalizePatterns = (raw: unknown): CompositionPattern[] => {
         panelFallback(panel as 1 | 2 | 3 | 4)
       ) as [MangaPanel, MangaPanel, MangaPanel, MangaPanel],
       a4Flow: normalizeA4Flow(null),
-      cta: "LINEで返信してください"
+      cta: ""
     });
   }
 

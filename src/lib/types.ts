@@ -53,11 +53,7 @@ const cleanList = (value: unknown, fallback: string[]) =>
 
 export const normalizeSummary = (raw: unknown): SummaryResult => {
   const source = (raw ?? {}) as Record<string, unknown>;
-  const ctaCandidates = cleanList(source.ctaCandidates, [
-    "LINEで返信してください",
-    "お電話でご相談ください",
-    "ご来店予約をお願いします"
-  ]);
+  const ctaCandidates = cleanList(source.ctaCandidates, []);
 
   return {
     mainTheme: cleanText(source.mainTheme, "季節の家電相談"),
@@ -68,7 +64,7 @@ export const normalizeSummary = (raw: unknown): SummaryResult => {
       source.solutionMessage,
       "店主が状況に合わせて分かりやすく提案します"
     ),
-    ctaCandidates: ctaCandidates.length > 0 ? ctaCandidates : ["LINEで返信してください"],
+    ctaCandidates,
     toneNotes: cleanText(source.toneNotes, "やさしく親しみやすい口調")
   };
 };
@@ -94,7 +90,7 @@ const normalizeA4Flow = (raw: unknown): A4Flow => {
     intro: cleanText(source.intro, "導入: お客様の状況説明"),
     empathy: cleanText(source.empathy, "共感: 困りごとへの寄り添い"),
     solution: cleanText(source.solution, "解決: 店主の提案"),
-    action: cleanText(source.action, "行動: LINE返信か電話相談へ")
+    action: cleanText(source.action, "締め: 安心感のある一言")
   };
 };
 
@@ -124,7 +120,7 @@ export const normalizePatterns = (raw: unknown): CompositionPattern[] => {
         normalizePanel(panels[3], 4)
       ] as [MangaPanel, MangaPanel, MangaPanel, MangaPanel],
       a4Flow: normalizeA4Flow(pattern.a4Flow),
-      cta: cleanText(pattern.cta, "LINEで返信してください")
+      cta: cleanText(pattern.cta, "")
     } satisfies CompositionPattern;
   });
 
@@ -143,7 +139,7 @@ export const normalizePatterns = (raw: unknown): CompositionPattern[] => {
         panelFallback(panel as 1 | 2 | 3 | 4)
       ) as [MangaPanel, MangaPanel, MangaPanel, MangaPanel],
       a4Flow: normalizeA4Flow(null),
-      cta: "LINEで返信してください"
+      cta: ""
     });
   }
 

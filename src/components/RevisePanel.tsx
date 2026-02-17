@@ -35,7 +35,7 @@ export function RevisePanel({
 
       <textarea
         className="mt-4 h-24 w-full rounded-xl border border-slate-200 p-3 text-sm"
-        placeholder="例: 2コマ目のセリフを短く、4コマ目のCTAを「LINE返信ください」に変更"
+        placeholder="例: 2コマ目のセリフを短く、4コマ目をやさしいオチに変更"
         value={instruction}
         onChange={(event) => setInstruction(event.target.value)}
       />

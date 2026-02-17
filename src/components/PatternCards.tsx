@@ -57,7 +57,7 @@ export function PatternCards({
                 ))}
               </ul>
               <p className="mt-3 rounded-lg bg-slate-100 p-2 text-xs text-slate-700">
-                CTA: {pattern.cta}
+                {pattern.cta ? `CTA: ${pattern.cta}` : "CTAなし"}
               </p>
             </button>
           );
