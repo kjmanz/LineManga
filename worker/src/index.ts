@@ -207,6 +207,11 @@ let geminiModelCache:
     }
   | null = null;
 
+const sanitizeCtrTerm = (value: string) =>
+  value
+    .replace(/ＣＴＲ/g, "反応率")
+    .replace(/\bctr\b/gi, "反応率");
+
 const TEXT_SYSTEM_PROMPT = `
 あなたは「地域密着の電気屋さん向け漫画コンテンツディレクター」です。
 対象読者は50代以上の地域のお客様です。
@@ -225,6 +230,7 @@ LINE投稿文:
 - 投稿文から逸脱しないこと
 - 50代以上の読者に伝わる言葉に言い換えること
 - CTA候補は空配列にすること
+- 「CTR」という語は使わず、必ず「反応率」に言い換えること
 
 次のJSONを必ず返してください:
 {
@@ -255,6 +261,7 @@ ${JSON.stringify(summary, null, 2)}
 - A4縦は4コマ形式を禁止し、1ページ漫画として「導入・共感・解決・締め」の順で設計する
 - CTAや連絡誘導文は入れない
 - セリフは短く、スマホ可読性を優先
+- 出力テキストで「CTR」という語を使わず、必ず「反応率」に言い換える
 
 次のJSONを返してください:
 {
@@ -445,7 +452,7 @@ const imagePrompt = ({
       ? "4コマは田の字または縦1列で読みやすく配置。"
       : "A4は4コマ枠(均等4分割)を使わず、メインビジュアル+吹き出し+補助カットで視線誘導を設計する。";
 
-  const trimmedInstruction = revisionInstruction?.trim() ?? "";
+  const trimmedInstruction = sanitizeCtrTerm(revisionInstruction?.trim() ?? "");
   const isRevision = trimmedInstruction.length > 0 || imageEdits.length > 0;
   const modeBlock =
     editMode === "masked_inpaint"
@@ -493,21 +500,24 @@ ${panelText(pattern)}
 - 日本語テキストを入れる。セリフは短く簡潔。
 - CTA（LINE返信・電話相談・来店予約などの連絡誘導）は入れない。
 - 投稿内容から逸脱しない。
+- 画像内文字とセリフで「CTR」「ＣＴＲ」「ctr」を使わず、必ず「反応率」と表記する。
 
 ${revisionBlock}
 `.trim();
 };
 
 const cleanText = (value: unknown, fallback: string) =>
-  typeof value === "string" && value.trim().length > 0 ? value.trim() : fallback;
+  typeof value === "string" && value.trim().length > 0
+    ? sanitizeCtrTerm(value.trim())
+    : sanitizeCtrTerm(fallback);
 
 const cleanList = (value: unknown, fallback: string[]) =>
   Array.isArray(value)
     ? value
       .filter((item) => typeof item === "string")
-      .map((item) => item.trim())
+      .map((item) => sanitizeCtrTerm(item.trim()))
       .filter(Boolean)
-    : fallback;
+    : fallback.map(sanitizeCtrTerm);
 
 const normalizeSummary = (raw: unknown): SummaryResult => {
   const source = (raw ?? {}) as Record<string, unknown>;
@@ -557,6 +567,25 @@ const normalizePatternType = (value: unknown): PatternType => {
     return value;
   }
   return "共感型";
+};
+
+const normalizeReviseTargets = (value: unknown): MangaLayout[] => {
+  const targetOrder: MangaLayout[] = ["four-panel-square", "a4-vertical"];
+  if (!Array.isArray(value)) {
+    return targetOrder;
+  }
+
+  const selected = new Set<MangaLayout>();
+  for (const item of value) {
+    if (item === "four-panel-square" || item === "a4-vertical") {
+      selected.add(item);
+    }
+  }
+
+  if (selected.size === 0) {
+    return targetOrder;
+  }
+  return targetOrder.filter((target) => selected.has(target));
 };
 
 const normalizePatterns = (raw: unknown): CompositionPattern[] => {
@@ -1640,6 +1669,7 @@ const revise = async (request: Request, env: Env, origin: string | null) => {
     summary?: unknown;
     pattern?: unknown;
     revisionInstruction?: string;
+    reviseTargets?: unknown;
     imageEdits?: unknown;
     editMode?: unknown;
     preserveOutsideMask?: unknown;
@@ -1650,9 +1680,14 @@ const revise = async (request: Request, env: Env, origin: string | null) => {
     wifeReferenceDataUrl?: string;
     previousFourPanelImageDataUrl?: string;
     previousA4ImageDataUrl?: string;
+    previousFourPanelPrompt?: string;
+    previousA4Prompt?: string;
   };
 
   const revisionInstruction = body.revisionInstruction?.trim() ?? "";
+  const reviseTargets = normalizeReviseTargets(body.reviseTargets);
+  const shouldReviseFourPanel = reviseTargets.includes("four-panel-square");
+  const shouldReviseA4 = reviseTargets.includes("a4-vertical");
   const imageEdits = normalizeImageEdits(body.imageEdits);
   const editMode = normalizeImageEditMode(body.editMode);
   const preserveOutsideMask = normalizeBoolean(body.preserveOutsideMask, true);
@@ -1662,8 +1697,13 @@ const revise = async (request: Request, env: Env, origin: string | null) => {
   if (!revisionInstruction && imageEdits.length === 0) {
     return badRequest("修正指示または編集ポイントを入力してください。", origin);
   }
-  if (editMode === "masked_inpaint" && (!fourPanelMaskImageDataUrl || !a4MaskImageDataUrl)) {
-    return badRequest("高精度部分編集モードでは4コマ/A4のマスク画像が必要です。", origin);
+  if (editMode === "masked_inpaint") {
+    if (shouldReviseFourPanel && !fourPanelMaskImageDataUrl) {
+      return badRequest("高精度部分編集モードで4コマを修正する場合は4コママスク画像が必要です。", origin);
+    }
+    if (shouldReviseA4 && !a4MaskImageDataUrl) {
+      return badRequest("高精度部分編集モードでA4を修正する場合はA4マスク画像が必要です。", origin);
+    }
   }
 
   const summary = normalizeSummary(body.summary);
@@ -1673,7 +1713,7 @@ const revise = async (request: Request, env: Env, origin: string | null) => {
     body.wifeReferenceDataUrl
   );
 
-  const { fourPanelPrompt, a4Prompt } = buildPatternPrompts({
+  const { fourPanelPrompt: revisedFourPanelPrompt, a4Prompt: revisedA4Prompt } = buildPatternPrompts({
     summary,
     pattern,
     revisionInstruction,
@@ -1683,31 +1723,58 @@ const revise = async (request: Request, env: Env, origin: string | null) => {
     maskFeatherPx
   });
 
-  const [fourPanelImageDataUrl, a4ImageDataUrl] = await Promise.all([
-    generateMangaImage({
-      env,
-      prompt: fourPanelPrompt,
-      referenceDataUrls,
-      previousImageDataUrl: body.previousFourPanelImageDataUrl,
-      maskImageDataUrl: fourPanelMaskImageDataUrl,
-      editMode
-    }),
-    generateMangaImage({
-      env,
-      prompt: a4Prompt,
-      referenceDataUrls,
-      previousImageDataUrl: body.previousA4ImageDataUrl,
-      maskImageDataUrl: a4MaskImageDataUrl,
-      editMode
-    })
-  ]);
+  let fourPanelPrompt = body.previousFourPanelPrompt?.trim() || revisedFourPanelPrompt;
+  let a4Prompt = body.previousA4Prompt?.trim() || revisedA4Prompt;
+  let fourPanelImageDataUrl = body.previousFourPanelImageDataUrl;
+  let a4ImageDataUrl = body.previousA4ImageDataUrl;
+
+  const generationTasks: Promise<void>[] = [];
+
+  if (shouldReviseFourPanel || !fourPanelImageDataUrl) {
+    fourPanelPrompt = revisedFourPanelPrompt;
+    generationTasks.push(
+      generateMangaImage({
+        env,
+        prompt: revisedFourPanelPrompt,
+        referenceDataUrls,
+        previousImageDataUrl: body.previousFourPanelImageDataUrl,
+        maskImageDataUrl: shouldReviseFourPanel ? fourPanelMaskImageDataUrl : undefined,
+        editMode: shouldReviseFourPanel ? editMode : "global_rewrite"
+      }).then((imageDataUrl) => {
+        fourPanelImageDataUrl = imageDataUrl;
+      })
+    );
+  }
+
+  if (shouldReviseA4 || !a4ImageDataUrl) {
+    a4Prompt = revisedA4Prompt;
+    generationTasks.push(
+      generateMangaImage({
+        env,
+        prompt: revisedA4Prompt,
+        referenceDataUrls,
+        previousImageDataUrl: body.previousA4ImageDataUrl,
+        maskImageDataUrl: shouldReviseA4 ? a4MaskImageDataUrl : undefined,
+        editMode: shouldReviseA4 ? editMode : "global_rewrite"
+      }).then((imageDataUrl) => {
+        a4ImageDataUrl = imageDataUrl;
+      })
+    );
+  }
+
+  await Promise.all(generationTasks);
+
+  if (!fourPanelImageDataUrl || !a4ImageDataUrl) {
+    throw new Error("再生成に必要な画像データが不足しています。");
+  }
 
   return json(
     {
       fourPanelImageDataUrl,
       a4ImageDataUrl,
       fourPanelPrompt,
-      a4Prompt
+      a4Prompt,
+      revisedLayouts: reviseTargets
     },
     200,
     origin

@@ -1,7 +1,7 @@
 "use client";
 
 import { Spinner } from "./Spinner";
-import type { CompositionPattern, GenerationMode } from "@/lib/types";
+import type { CompositionPattern } from "@/lib/types";
 
 type Props = {
   patterns: CompositionPattern[];
@@ -11,7 +11,6 @@ type Props = {
   onBack: () => void;
   onGenerate: () => void;
   onGenerateAll: () => void;
-  generationMode: GenerationMode;
 };
 
 export function PatternCards({
@@ -21,16 +20,13 @@ export function PatternCards({
   onSelect,
   onBack,
   onGenerate,
-  onGenerateAll,
-  generationMode
+  onGenerateAll
 }: Props) {
-  const isBatchMode = generationMode === "batch";
-
   return (
     <section className="rounded-2xl bg-white p-6 shadow-panel">
       <h2 className="text-xl font-bold text-slate-900">STEP3 構成案選択</h2>
       <p className="mt-2 text-sm text-slate-600">
-        3パターンから1つを選んで生成します。全構成案の一括生成はBatchモードで利用できます。
+        3パターンから1つを選んで生成します。全構成案の一括生成も実行できます。
       </p>
 
       <div className="mt-5 grid gap-4 md:grid-cols-3">
@@ -82,33 +78,28 @@ export function PatternCards({
           {loading ? (
             <>
               <Spinner size="sm" className="text-white" />
-              <span>{isBatchMode ? "バッチ生成中..." : "通常生成中..."}</span>
+              <span>生成中...</span>
             </>
           ) : (
-            <span>{isBatchMode ? "選択中の構成案をバッチ生成" : "選択中の構成案を通常生成"}</span>
+            <span>選択中の構成案を生成</span>
           )}
         </button>
         <button
           type="button"
           onClick={onGenerateAll}
-          disabled={loading || patterns.length === 0 || !isBatchMode}
+          disabled={loading || patterns.length === 0}
           className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
         >
           {loading ? (
             <>
               <Spinner size="sm" className="text-white" />
-              <span>バッチ生成中...</span>
+              <span>生成中...</span>
             </>
           ) : (
-            <span>全構成案をバッチ生成</span>
+            <span>全構成案を一括生成</span>
           )}
         </button>
       </div>
-      {!isBatchMode ? (
-        <p className="mt-3 text-xs text-slate-500">
-          全構成案の一括生成はBatchモード選択時のみ利用できます。
-        </p>
-      ) : null}
     </section>
   );
 }

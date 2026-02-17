@@ -2,19 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { GenerationSettings } from "@/components/GenerationSettings";
 import { InputForm } from "@/components/InputForm";
 import { MangaPreview } from "@/components/MangaPreview";
 import { PatternCards } from "@/components/PatternCards";
 import { RevisePanel } from "@/components/RevisePanel";
-import { Spinner } from "@/components/Spinner";
 import { SummaryView } from "@/components/SummaryView";
 import {
   normalizeSummary,
   type CompositionPattern,
-  type GenerationMode,
   type GenerationResult,
   type ImageEditInstruction,
+  type ImageEditLayout,
   type ImageEditMode,
   type SummaryResult
 } from "@/lib/types";
@@ -33,40 +31,19 @@ class HttpError extends Error {
   }
 }
 
-type MangaLayout = "four-panel-square" | "a4-vertical";
-
-type BatchJobStart = {
-  batchName: string;
-  requestCount: number;
-  patternIds?: string[];
-};
-
-type BatchStartResponse = {
-  batchName?: string | null;
-  batchJobs?: BatchJobStart[];
-  requestCount: number;
-  pollIntervalMs?: number;
-};
-
-type BatchImageResult = {
-  patternId: string;
-  patternType: CompositionPattern["patternType"];
-  patternTitle: string;
-  layout: MangaLayout;
-  prompt: string;
-  imageDataUrl: string;
-};
-
-type BatchStatusResponse = {
-  done: boolean;
-  state: string;
-  batchName: string;
-  pollIntervalMs?: number;
-  error?: string;
-  results?: BatchImageResult[];
-};
-
 type PatternGenerationMap = Record<string, GenerationResult>;
+type ReviseTarget = ImageEditLayout | "both";
+
+type RevisePayload = {
+  revisionInstruction: string;
+  imageEdits: ImageEditInstruction[];
+  editMode: ImageEditMode;
+  preserveOutsideMask: boolean;
+  maskFeatherPx: number;
+  fourPanelMaskImageDataUrl?: string;
+  a4MaskImageDataUrl?: string;
+  reviseTarget: ReviseTarget;
+};
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").trim().replace(/\/+$/, "");
 
@@ -91,10 +68,22 @@ const STEP_LABELS = [
 const INITIAL_SUMMARY: SummaryResult = normalizeSummary(null);
 const OWNER_REFERENCE_PATH = "references/owner.png";
 const WIFE_REFERENCE_PATH = "references/wife.png";
+const AUTOSAVE_STORAGE_KEY = "line-manga-autosave";
+
+type AutosaveState = {
+  step: number;
+  postText: string;
+  summary: SummaryResult;
+  patterns: CompositionPattern[];
+  selectedPatternId: string | null;
+  generation: GenerationResult | null;
+  generationByPatternId: PatternGenerationMap;
+  revisedGeneration: GenerationResult | null;
+  generatedImageCount: number;
+};
 
 const saveAutosaveState = (state: AutosaveState) => {
   try {
-    // 画像データは大きいため保存しない（generation, generationByPatternId, revisedGenerationの画像部分を除外）
     const stateToSave: AutosaveState = {
       ...state,
       generation: state.generation
@@ -124,7 +113,7 @@ const saveAutosaveState = (state: AutosaveState) => {
     };
     window.localStorage.setItem(AUTOSAVE_STORAGE_KEY, JSON.stringify(stateToSave));
   } catch {
-    // LocalStorage容量超過などのエラーは無視
+    // ignore quota/storage errors
   }
 };
 
@@ -135,7 +124,6 @@ const loadAutosaveState = (): AutosaveState | null => {
       return null;
     }
     const parsed = JSON.parse(saved) as AutosaveState;
-    // 妥当性チェック
     if (typeof parsed.step !== "number" || parsed.step < 1 || parsed.step > 5) {
       return null;
     }
@@ -149,25 +137,8 @@ const clearAutosaveState = () => {
   try {
     window.localStorage.removeItem(AUTOSAVE_STORAGE_KEY);
   } catch {
-    // エラーは無視
+    // ignore storage errors
   }
-};
-const BATCH_POLL_INTERVAL_MS = 5000;
-const BATCH_WARNING_MS = 3 * 60 * 1000;
-const BATCH_TIMEOUT_MS = 10 * 60 * 1000;
-const GENERATION_MODE_STORAGE_KEY = "line-manga-generation-mode";
-const AUTOSAVE_STORAGE_KEY = "line-manga-autosave";
-
-type AutosaveState = {
-  step: number;
-  postText: string;
-  summary: SummaryResult;
-  patterns: CompositionPattern[];
-  selectedPatternId: string | null;
-  generation: GenerationResult | null;
-  generationByPatternId: PatternGenerationMap;
-  revisedGeneration: GenerationResult | null;
-  generatedImageCount: number;
 };
 
 const blobToDataUrl = (blob: Blob) =>
@@ -202,63 +173,8 @@ async function postJson<T>(url: string, payload: unknown): Promise<T> {
   return data;
 }
 
-const wait = (ms: number) =>
-  new Promise<void>((resolve) => {
-    setTimeout(resolve, ms);
-  });
-
-const toSingleGenerationResult = (results: BatchImageResult[], patternId: string): GenerationResult => {
-  const fourPanel = results.find(
-    (result) => result.patternId === patternId && result.layout === "four-panel-square"
-  );
-  const a4 = results.find((result) => result.patternId === patternId && result.layout === "a4-vertical");
-  if (!fourPanel || !a4) {
-    throw new Error(`バッチ結果が不足しています: ${patternId}`);
-  }
-  return {
-    fourPanelImageDataUrl: fourPanel.imageDataUrl,
-    a4ImageDataUrl: a4.imageDataUrl,
-    fourPanelPrompt: fourPanel.prompt,
-    a4Prompt: a4.prompt
-  };
-};
-
-const toPatternGenerationMap = (results: BatchImageResult[]): PatternGenerationMap => {
-  const map: PatternGenerationMap = {};
-  const patternIds = Array.from(new Set(results.map((result) => result.patternId)));
-
-  for (const patternId of patternIds) {
-    const fourPanel = results.find(
-      (result) => result.patternId === patternId && result.layout === "four-panel-square"
-    );
-    const a4 = results.find((result) => result.patternId === patternId && result.layout === "a4-vertical");
-    if (!fourPanel || !a4) {
-      continue;
-    }
-    map[patternId] = {
-      fourPanelImageDataUrl: fourPanel.imageDataUrl,
-      a4ImageDataUrl: a4.imageDataUrl,
-      fourPanelPrompt: fourPanel.prompt,
-      a4Prompt: a4.prompt
-    };
-  }
-
-  return map;
-};
-
-const toBatchApiErrorMessage = (error: unknown, endpoint: string, fallback: string) => {
-  if (error instanceof HttpError && error.status === 404) {
-    return `Worker APIが旧版です。${endpoint} が見つかりません。Workerを最新コードで再デプロイしてください。`;
-  }
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return fallback;
-};
-
 export default function Home() {
   const [step, setStep] = useState(1);
-  const [generationMode, setGenerationMode] = useState<GenerationMode>("batch");
   const [postText, setPostText] = useState("");
   const [summary, setSummary] = useState<SummaryResult>(INITIAL_SUMMARY);
   const [patterns, setPatterns] = useState<CompositionPattern[]>([]);
@@ -271,8 +187,6 @@ export default function Home() {
   const [referenceLoading, setReferenceLoading] = useState(true);
   const [referenceError, setReferenceError] = useState<string | null>(null);
   const [generatedImageCount, setGeneratedImageCount] = useState(0);
-  const [batchStatusMessage, setBatchStatusMessage] = useState<string | null>(null);
-  const [batchWarningMessage, setBatchWarningMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showResetDialog, setShowResetDialog] = useState(false);
@@ -287,18 +201,6 @@ export default function Home() {
   const generatedPatternIds = useMemo(() => Object.keys(generationByPatternId), [generationByPatternId]);
 
   useEffect(() => {
-    const savedMode = window.localStorage.getItem(GENERATION_MODE_STORAGE_KEY);
-    if (savedMode === "batch" || savedMode === "standard") {
-      setGenerationMode(savedMode);
-    }
-  }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem(GENERATION_MODE_STORAGE_KEY, generationMode);
-  }, [generationMode]);
-
-  // オートセーブ復元
-  useEffect(() => {
     const saved = loadAutosaveState();
     if (saved) {
       setStep(saved.step);
@@ -307,12 +209,10 @@ export default function Home() {
       setPatterns(saved.patterns);
       setSelectedPatternId(saved.selectedPatternId);
       setGeneratedImageCount(saved.generatedImageCount);
-      // 画像データは保存されていないので復元しない
     }
     setAutosaveLoaded(true);
   }, []);
 
-  // オートセーブ保存
   useEffect(() => {
     if (!autosaveLoaded) {
       return;
@@ -328,7 +228,18 @@ export default function Home() {
       revisedGeneration,
       generatedImageCount
     });
-  }, [step, postText, summary, patterns, selectedPatternId, generation, generationByPatternId, revisedGeneration, generatedImageCount, autosaveLoaded]);
+  }, [
+    autosaveLoaded,
+    generatedImageCount,
+    generation,
+    generationByPatternId,
+    patterns,
+    postText,
+    revisedGeneration,
+    selectedPatternId,
+    step,
+    summary
+  ]);
 
   const handleReset = useCallback(() => {
     clearAutosaveState();
@@ -342,120 +253,8 @@ export default function Home() {
     setRevisedGeneration(null);
     setGeneratedImageCount(0);
     setError(null);
-    clearBatchMessages();
     setShowResetDialog(false);
   }, []);
-
-  const clearBatchMessages = () => {
-    setBatchStatusMessage(null);
-    setBatchWarningMessage(null);
-  };
-
-  const handleGenerationModeChange = (mode: GenerationMode) => {
-    setGenerationMode(mode);
-    setError(null);
-    clearBatchMessages();
-  };
-
-  const toBatchJobs = (started: BatchStartResponse): BatchJobStart[] => {
-    const jobs = Array.isArray(started.batchJobs) ? started.batchJobs : [];
-    if (jobs.length > 0) {
-      return jobs
-        .filter((job) => typeof job.batchName === "string" && job.batchName.trim().length > 0)
-        .map((job) => ({
-          ...job,
-          batchName: job.batchName.trim()
-        }));
-    }
-    const singleBatchName = started.batchName?.trim();
-    if (!singleBatchName) {
-      return [];
-    }
-    return [
-      {
-        batchName: singleBatchName,
-        requestCount: started.requestCount
-      }
-    ];
-  };
-
-  const pollBatchJobsUntilDone = async (
-    batchJobs: BatchJobStart[],
-    fallbackIntervalMs = BATCH_POLL_INTERVAL_MS
-  ) => {
-    if (batchJobs.length === 0) {
-      throw new Error("バッチジョブ情報が不足しています。Workerを最新にデプロイしてください。");
-    }
-
-    const startedAt = Date.now();
-    let warned = false;
-    const pending = new Map(batchJobs.map((job) => [job.batchName, job] as const));
-    const completed = new Map<string, BatchStatusResponse>();
-
-    for (let attempt = 0; ; attempt += 1) {
-      const elapsedMs = Date.now() - startedAt;
-      if (elapsedMs >= BATCH_TIMEOUT_MS) {
-        throw new Error("Batchモードは10分でタイムアウトしました。通常モードに切り替えるか時間をおいて再試行してください。");
-      }
-
-      const pendingBatchNames = Array.from(pending.keys());
-      const statuses = await Promise.all(
-        pendingBatchNames.map((batchName) =>
-          postJson<BatchStatusResponse>("/api/batch-status", {
-            batchName
-          })
-        )
-      );
-
-      let pollIntervalMs = fallbackIntervalMs;
-      const stateCounts = new Map<string, number>();
-
-      for (let index = 0; index < statuses.length; index += 1) {
-        const status = statuses[index];
-        const batchName = pendingBatchNames[index];
-        if (status.done) {
-          if (status.error) {
-            throw new Error(`${batchName}: ${status.error}`);
-          }
-          completed.set(batchName, status);
-          pending.delete(batchName);
-          continue;
-        }
-
-        const stateText = status.state || "RUNNING";
-        stateCounts.set(stateText, (stateCounts.get(stateText) ?? 0) + 1);
-        if (typeof status.pollIntervalMs === "number" && status.pollIntervalMs > 0) {
-          pollIntervalMs = Math.min(pollIntervalMs, status.pollIntervalMs);
-        }
-      }
-
-      if (completed.size === batchJobs.length) {
-        return batchJobs
-          .map((job) => completed.get(job.batchName))
-          .filter((status): status is BatchStatusResponse => Boolean(status));
-      }
-
-      const elapsedSec = Math.floor(elapsedMs / 1000);
-      const elapsedMin = Math.floor(elapsedSec / 60);
-      const restSec = `${elapsedSec % 60}`.padStart(2, "0");
-      const stateText =
-        stateCounts.size > 0
-          ? Array.from(stateCounts.entries())
-              .map(([state, count]) => `${state}x${count}`)
-              .join(", ")
-          : "RUNNING";
-      setBatchStatusMessage(
-        `バッチ処理中: ${completed.size}/${batchJobs.length}完了 / ${stateText} (${attempt + 1}回目の確認 / 経過 ${elapsedMin}:${restSec})`
-      );
-
-      if (!warned && elapsedMs >= BATCH_WARNING_MS) {
-        warned = true;
-        setBatchWarningMessage("Batch処理が3分を超えました。混雑中の可能性があります。");
-      }
-
-      await wait(pollIntervalMs);
-    }
-  };
 
   const selectGeneratedPattern = (patternId: string) => {
     const generated = generationByPatternId[patternId];
@@ -507,7 +306,6 @@ export default function Home() {
   const handleSummarize = async () => {
     try {
       setError(null);
-      clearBatchMessages();
       setLoading(true);
       const data = await postJson<{ summary: SummaryResult }>("/api/summarize", {
         postText
@@ -529,7 +327,6 @@ export default function Home() {
   const handleCompose = async () => {
     try {
       setError(null);
-      clearBatchMessages();
       setLoading(true);
       const data = await postJson<{ patterns: CompositionPattern[] }>("/api/compose", {
         summary
@@ -556,51 +353,19 @@ export default function Home() {
     try {
       setError(null);
       setLoading(true);
-      if (generationMode === "batch") {
-        clearBatchMessages();
-        setBatchStatusMessage("バッチジョブを作成しています...");
-        const started = await postJson<BatchStartResponse>("/api/batch-generate", {
-          summary,
-          pattern: selectedPattern,
-          ownerReferenceDataUrl,
-          wifeReferenceDataUrl
-        });
-        const batchJobs = toBatchJobs(started);
-        setBatchStatusMessage(`バッチ作成完了: ${batchJobs.length}ジョブ`);
-        const completedStatuses = await pollBatchJobsUntilDone(
-          batchJobs,
-          started.pollIntervalMs ?? BATCH_POLL_INTERVAL_MS
-        );
-        const results = completedStatuses.flatMap((status) => status.results ?? []);
-        const generated = toSingleGenerationResult(results, selectedPattern.id);
-        setGeneration(generated);
-        setGenerationByPatternId({ [selectedPattern.id]: generated });
-        setRevisedGeneration(null);
-        setGeneratedImageCount((count) => count + results.length);
-        clearBatchMessages();
-      } else {
-        clearBatchMessages();
-        const generated = await postJson<GenerationResult>("/api/generate", {
-          summary,
-          pattern: selectedPattern,
-          ownerReferenceDataUrl,
-          wifeReferenceDataUrl
-        });
-        setGeneration(generated);
-        setGenerationByPatternId({ [selectedPattern.id]: generated });
-        setRevisedGeneration(null);
-        setGeneratedImageCount((count) => count + 2);
-      }
+      const generated = await postJson<GenerationResult>("/api/generate", {
+        summary,
+        pattern: selectedPattern,
+        ownerReferenceDataUrl,
+        wifeReferenceDataUrl
+      });
+      setGeneration(generated);
+      setGenerationByPatternId({ [selectedPattern.id]: generated });
+      setRevisedGeneration(null);
+      setGeneratedImageCount((count) => count + 2);
       setStep(4);
     } catch (err) {
-      clearBatchMessages();
-      setError(
-        generationMode === "batch"
-          ? toBatchApiErrorMessage(err, "/api/batch-generate", "バッチ生成に失敗しました。")
-          : err instanceof Error
-          ? err.message
-          : "通常生成に失敗しました。"
-      );
+      setError(err instanceof Error ? err.message : "生成に失敗しました。");
     } finally {
       setLoading(false);
     }
@@ -611,33 +376,28 @@ export default function Home() {
       setError("構成案がありません。STEP2からやり直してください。");
       return;
     }
-    if (generationMode !== "batch") {
-      setError("全構成案の一括生成はBatchモードでのみ利用できます。設定でBatchモードを選択してください。");
-      return;
-    }
 
     try {
       setError(null);
-      clearBatchMessages();
-      setBatchStatusMessage("全構成案のバッチジョブを作成しています...");
       setLoading(true);
-      const started = await postJson<BatchStartResponse>("/api/batch-generate-all", {
-        summary,
-        patterns,
-        ownerReferenceDataUrl,
-        wifeReferenceDataUrl
-      });
-      const batchJobs = toBatchJobs(started);
-      setBatchStatusMessage(`全構成案バッチ作成完了: ${batchJobs.length}ジョブ`);
-      const completedStatuses = await pollBatchJobsUntilDone(
-        batchJobs,
-        started.pollIntervalMs ?? BATCH_POLL_INTERVAL_MS
-      );
-      const results = completedStatuses.flatMap((status) => status.results ?? []);
-      const map = toPatternGenerationMap(results);
+
+      const map: PatternGenerationMap = {};
+      let generatedCount = 0;
+
+      for (const pattern of patterns) {
+        const generated = await postJson<GenerationResult>("/api/generate", {
+          summary,
+          pattern,
+          ownerReferenceDataUrl,
+          wifeReferenceDataUrl
+        });
+        map[pattern.id] = generated;
+        generatedCount += 2;
+      }
+
       const generatedIds = Object.keys(map);
       if (generatedIds.length === 0) {
-        throw new Error("全構成案バッチの生成結果が空でした。");
+        throw new Error("全構成案の生成結果が空でした。");
       }
 
       const preferredId =
@@ -649,14 +409,10 @@ export default function Home() {
       setSelectedPatternId(preferredId);
       setGeneration(map[preferredId] ?? null);
       setRevisedGeneration(null);
-      setGeneratedImageCount((count) => count + results.length);
-      clearBatchMessages();
+      setGeneratedImageCount((count) => count + generatedCount);
       setStep(4);
     } catch (err) {
-      clearBatchMessages();
-      setError(
-        toBatchApiErrorMessage(err, "/api/batch-generate-all", "全構成案バッチ生成に失敗しました。")
-      );
+      setError(err instanceof Error ? err.message : "全構成案生成に失敗しました。");
     } finally {
       setLoading(false);
     }
@@ -669,86 +425,48 @@ export default function Home() {
     preserveOutsideMask,
     maskFeatherPx,
     fourPanelMaskImageDataUrl,
-    a4MaskImageDataUrl
-  }: {
-    revisionInstruction: string;
-    imageEdits: ImageEditInstruction[];
-    editMode: ImageEditMode;
-    preserveOutsideMask: boolean;
-    maskFeatherPx: number;
-    fourPanelMaskImageDataUrl?: string;
-    a4MaskImageDataUrl?: string;
-  }) => {
+    a4MaskImageDataUrl,
+    reviseTarget
+  }: RevisePayload) => {
     if (!selectedPattern || !generation) {
       setError("再生成前にSTEP3で生成してください。");
       return;
     }
+
     const normalizedInstruction = revisionInstruction.trim();
     if (!normalizedInstruction && imageEdits.length === 0) {
       setError("修正指示か編集ポイントを1つ以上入力してください。");
       return;
     }
+
+    const reviseTargets: ImageEditLayout[] =
+      reviseTarget === "both" ? ["four-panel-square", "a4-vertical"] : [reviseTarget];
+
     try {
       setError(null);
       setLoading(true);
-      if (generationMode === "batch") {
-        clearBatchMessages();
-        setBatchStatusMessage("修正再生成のバッチジョブを作成しています...");
-        const started = await postJson<BatchStartResponse>("/api/batch-revise", {
-          summary,
-          pattern: selectedPattern,
-          ownerReferenceDataUrl,
-          wifeReferenceDataUrl,
-          revisionInstruction: normalizedInstruction,
-          imageEdits,
-          editMode,
-          preserveOutsideMask,
-          maskFeatherPx,
-          fourPanelMaskImageDataUrl,
-          a4MaskImageDataUrl,
-          previousFourPanelImageDataUrl: generation.fourPanelImageDataUrl,
-          previousA4ImageDataUrl: generation.a4ImageDataUrl
-        });
-        const batchJobs = toBatchJobs(started);
-        setBatchStatusMessage(`修正バッチ作成完了: ${batchJobs.length}ジョブ`);
-        const completedStatuses = await pollBatchJobsUntilDone(
-          batchJobs,
-          started.pollIntervalMs ?? BATCH_POLL_INTERVAL_MS
-        );
-        const results = completedStatuses.flatMap((status) => status.results ?? []);
-        const revised = toSingleGenerationResult(results, selectedPattern.id);
-        setRevisedGeneration(revised);
-        setGeneratedImageCount((count) => count + results.length);
-        clearBatchMessages();
-      } else {
-        clearBatchMessages();
-        const revised = await postJson<GenerationResult>("/api/revise", {
-          summary,
-          pattern: selectedPattern,
-          ownerReferenceDataUrl,
-          wifeReferenceDataUrl,
-          revisionInstruction: normalizedInstruction,
-          imageEdits,
-          editMode,
-          preserveOutsideMask,
-          maskFeatherPx,
-          fourPanelMaskImageDataUrl,
-          a4MaskImageDataUrl,
-          previousFourPanelImageDataUrl: generation.fourPanelImageDataUrl,
-          previousA4ImageDataUrl: generation.a4ImageDataUrl
-        });
-        setRevisedGeneration(revised);
-        setGeneratedImageCount((count) => count + 2);
-      }
+      const revised = await postJson<GenerationResult>("/api/revise", {
+        summary,
+        pattern: selectedPattern,
+        ownerReferenceDataUrl,
+        wifeReferenceDataUrl,
+        revisionInstruction: normalizedInstruction,
+        imageEdits,
+        editMode,
+        preserveOutsideMask,
+        maskFeatherPx,
+        fourPanelMaskImageDataUrl,
+        a4MaskImageDataUrl,
+        reviseTargets,
+        previousFourPanelImageDataUrl: generation.fourPanelImageDataUrl,
+        previousA4ImageDataUrl: generation.a4ImageDataUrl,
+        previousFourPanelPrompt: generation.fourPanelPrompt,
+        previousA4Prompt: generation.a4Prompt
+      });
+      setRevisedGeneration(revised);
+      setGeneratedImageCount((count) => count + reviseTargets.length);
     } catch (err) {
-      clearBatchMessages();
-      setError(
-        generationMode === "batch"
-          ? toBatchApiErrorMessage(err, "/api/batch-revise", "修正再生成バッチに失敗しました。")
-          : err instanceof Error
-          ? err.message
-          : "通常再生成に失敗しました。"
-      );
+      setError(err instanceof Error ? err.message : "再生成に失敗しました。");
     } finally {
       setLoading(false);
     }
@@ -802,7 +520,6 @@ export default function Home() {
         onConfirm={handleReset}
         onCancel={() => setShowResetDialog(false)}
       />
-      <GenerationSettings mode={generationMode} loading={loading} onChange={handleGenerationModeChange} />
 
       <ol className="mt-5 grid gap-2 rounded-xl bg-slate-900 p-3 text-xs text-white md:grid-cols-5 md:text-sm">
         {STEP_LABELS.map((label, index) => {
@@ -829,16 +546,6 @@ export default function Home() {
       {error ? (
         <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {error}
-        </p>
-      ) : null}
-      {batchStatusMessage ? (
-        <p className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-          {batchStatusMessage}
-        </p>
-      ) : null}
-      {batchWarningMessage ? (
-        <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          {batchWarningMessage}
         </p>
       ) : null}
 
@@ -877,7 +584,6 @@ export default function Home() {
             patterns={patterns}
             selectedPatternId={selectedPatternId}
             loading={loading}
-            generationMode={generationMode}
             onSelect={setSelectedPatternId}
             onBack={() => setStep(2)}
             onGenerate={handleGenerate}
@@ -927,7 +633,6 @@ export default function Home() {
             previousResult={generation}
             revisedResult={revisedGeneration}
             loading={loading}
-            mode={generationMode}
             onBack={() => setStep(4)}
             onRevise={handleRevise}
             onAdoptRevised={handleAdoptRevised}

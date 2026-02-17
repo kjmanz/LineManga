@@ -3,7 +3,6 @@
 import { useMemo, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 import { Spinner } from "./Spinner";
 import type {
-  GenerationMode,
   GenerationResult,
   ImageEditInstruction,
   ImageEditKind,
@@ -11,6 +10,8 @@ import type {
   ImageEditMode,
   ImageEditShape
 } from "@/lib/types";
+
+type ReviseTarget = ImageEditLayout | "both";
 
 type RevisePayload = {
   revisionInstruction: string;
@@ -20,13 +21,13 @@ type RevisePayload = {
   maskFeatherPx: number;
   fourPanelMaskImageDataUrl?: string;
   a4MaskImageDataUrl?: string;
+  reviseTarget: ReviseTarget;
 };
 
 type Props = {
   previousResult: GenerationResult;
   revisedResult: GenerationResult | null;
   loading: boolean;
-  mode: GenerationMode;
   onBack: () => void;
   onRevise: (payload: RevisePayload) => Promise<void> | void;
   onAdoptRevised: () => void;
@@ -152,7 +153,6 @@ export function RevisePanel({
   previousResult,
   revisedResult,
   loading,
-  mode,
   onBack,
   onRevise,
   onAdoptRevised
@@ -168,7 +168,13 @@ export function RevisePanel({
   const [preparingMasks, setPreparingMasks] = useState(false);
   const [maskError, setMaskError] = useState<string | null>(null);
   const editIdSeq = useRef(1);
-  const isBatchMode = mode === "batch";
+  const [target, setTarget] = useState<ReviseTarget>("both");
+  const actionLabel =
+    target === "both"
+      ? "4コマとA4を再生成"
+      : target === "four-panel-square"
+      ? "4コマを再生成"
+      : "A4を再生成";
 
   const hasEmptyEditComment = useMemo(
     () => imageEdits.some((edit) => edit.comment.trim().length === 0),
@@ -431,7 +437,8 @@ export function RevisePanel({
         preserveOutsideMask,
         maskFeatherPx,
         fourPanelMaskImageDataUrl,
-        a4MaskImageDataUrl
+        a4MaskImageDataUrl,
+        reviseTarget: target
       })
     );
   };
@@ -649,6 +656,48 @@ export function RevisePanel({
         </p>
       ) : null}
 
+      <div className="mt-3">
+        <p className="text-xs font-semibold text-slate-700">修正対象</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={loading || preparingMasks}
+            onClick={() => setTarget("both")}
+            className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
+              target === "both"
+                ? "border-brand-500 bg-brand-50 text-brand-700"
+                : "border-slate-300 bg-white text-slate-700"
+            } disabled:cursor-not-allowed disabled:opacity-50`}
+          >
+            4コマ + A4
+          </button>
+          <button
+            type="button"
+            disabled={loading || preparingMasks}
+            onClick={() => setTarget("four-panel-square")}
+            className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
+              target === "four-panel-square"
+                ? "border-brand-500 bg-brand-50 text-brand-700"
+                : "border-slate-300 bg-white text-slate-700"
+            } disabled:cursor-not-allowed disabled:opacity-50`}
+          >
+            4コマのみ
+          </button>
+          <button
+            type="button"
+            disabled={loading || preparingMasks}
+            onClick={() => setTarget("a4-vertical")}
+            className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
+              target === "a4-vertical"
+                ? "border-brand-500 bg-brand-50 text-brand-700"
+                : "border-slate-300 bg-white text-slate-700"
+            } disabled:cursor-not-allowed disabled:opacity-50`}
+          >
+            A4のみ
+          </button>
+        </div>
+      </div>
+
       <div className="mt-3 flex flex-wrap gap-3">
         <button
           type="button"
@@ -674,10 +723,10 @@ export function RevisePanel({
           ) : loading ? (
             <>
               <Spinner size="sm" className="text-white" />
-              <span>{isBatchMode ? "バッチ再生成中..." : "通常再生成中..."}</span>
+              <span>再生成中...</span>
             </>
           ) : (
-            <span>{isBatchMode ? "修正してバッチ再生成" : "修正して通常再生成"}</span>
+            <span>{actionLabel}</span>
           )}
         </button>
         {revisedResult ? (

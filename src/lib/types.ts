@@ -56,16 +56,23 @@ export type GenerationResult = {
   a4Prompt: string;
 };
 
+const sanitizeCtrTerm = (value: string) =>
+  value
+    .replace(/ＣＴＲ/g, "反応率")
+    .replace(/\bctr\b/gi, "反応率");
+
 const cleanText = (value: unknown, fallback: string) =>
-  typeof value === "string" && value.trim().length > 0 ? value.trim() : fallback;
+  typeof value === "string" && value.trim().length > 0
+    ? sanitizeCtrTerm(value.trim())
+    : sanitizeCtrTerm(fallback);
 
 const cleanList = (value: unknown, fallback: string[]) =>
   Array.isArray(value)
     ? value
         .filter((item) => typeof item === "string")
-        .map((item) => item.trim())
+        .map((item) => sanitizeCtrTerm(item.trim()))
         .filter(Boolean)
-    : fallback;
+    : fallback.map(sanitizeCtrTerm);
 
 export const normalizeSummary = (raw: unknown): SummaryResult => {
   const source = (raw ?? {}) as Record<string, unknown>;
