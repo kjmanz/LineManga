@@ -8,12 +8,18 @@ import type {
   ImageEditInstruction,
   ImageEditKind,
   ImageEditLayout,
+  ImageEditMode,
   ImageEditShape
 } from "@/lib/types";
 
 type RevisePayload = {
   revisionInstruction: string;
   imageEdits: ImageEditInstruction[];
+  editMode: ImageEditMode;
+  preserveOutsideMask: boolean;
+  maskFeatherPx: number;
+  fourPanelMaskImageDataUrl?: string;
+  a4MaskImageDataUrl?: string;
 };
 
 type Props = {
@@ -22,7 +28,7 @@ type Props = {
   loading: boolean;
   mode: GenerationMode;
   onBack: () => void;
-  onRevise: (payload: RevisePayload) => void;
+  onRevise: (payload: RevisePayload) => Promise<void> | void;
   onAdoptRevised: () => void;
 };
 
@@ -62,6 +68,86 @@ const kindTone: Record<ImageEditKind, string> = {
   wife_face: "border-fuchsia-400 bg-fuchsia-50 text-fuchsia-700"
 };
 
+const loadImageElement = (dataUrl: string) =>
+  new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("マスク生成用の画像読み込みに失敗しました。"));
+    image.src = dataUrl;
+  });
+
+const drawEditShape = (
+  context: CanvasRenderingContext2D,
+  edit: ImageEditInstruction,
+  width: number,
+  height: number
+) => {
+  const x = clamp01(edit.x) * width;
+  const y = clamp01(edit.y) * height;
+  context.fillStyle = "#ffffff";
+
+  if (edit.shape === "rect") {
+    const rectWidth = clamp01(edit.width ?? 0) * width;
+    const rectHeight = clamp01(edit.height ?? 0) * height;
+    context.fillRect(x, y, rectWidth, rectHeight);
+    return;
+  }
+
+  const radius = Math.max(12, Math.round(Math.min(width, height) * 0.02));
+  context.beginPath();
+  context.arc(x, y, radius, 0, Math.PI * 2);
+  context.fill();
+};
+
+const buildMaskDataUrl = async ({
+  baseImageDataUrl,
+  edits,
+  featherPx
+}: {
+  baseImageDataUrl: string;
+  edits: ImageEditInstruction[];
+  featherPx: number;
+}) => {
+  const image = await loadImageElement(baseImageDataUrl);
+  const width = image.naturalWidth > 0 ? image.naturalWidth : 1;
+  const height = image.naturalHeight > 0 ? image.naturalHeight : 1;
+
+  const maskCanvas = document.createElement("canvas");
+  maskCanvas.width = width;
+  maskCanvas.height = height;
+  const maskContext = maskCanvas.getContext("2d");
+  if (!maskContext) {
+    throw new Error("マスク用キャンバスの初期化に失敗しました。\nブラウザを再読み込みして再試行してください。");
+  }
+
+  maskContext.fillStyle = "#000000";
+  maskContext.fillRect(0, 0, width, height);
+
+  if (edits.length === 0) {
+    return maskCanvas.toDataURL("image/png");
+  }
+
+  const rawCanvas = document.createElement("canvas");
+  rawCanvas.width = width;
+  rawCanvas.height = height;
+  const rawContext = rawCanvas.getContext("2d");
+  if (!rawContext) {
+    throw new Error("編集マスク生成に失敗しました。\nブラウザを再読み込みして再試行してください。");
+  }
+
+  for (const edit of edits) {
+    drawEditShape(rawContext, edit, width, height);
+  }
+
+  if (featherPx > 0) {
+    maskContext.filter = `blur(${featherPx}px)`;
+  }
+  maskContext.drawImage(rawCanvas, 0, 0);
+  maskContext.filter = "none";
+
+  return maskCanvas.toDataURL("image/png");
+};
+
 export function RevisePanel({
   previousResult,
   revisedResult,
@@ -76,13 +162,25 @@ export function RevisePanel({
   const [toolKind, setToolKind] = useState<ImageEditKind>("general");
   const [imageEdits, setImageEdits] = useState<ImageEditInstruction[]>([]);
   const [draftRect, setDraftRect] = useState<DraftRect | null>(null);
+  const [editMode, setEditMode] = useState<ImageEditMode>("global_rewrite");
+  const [preserveOutsideMask, setPreserveOutsideMask] = useState(true);
+  const [maskFeatherPx, setMaskFeatherPx] = useState(8);
+  const [preparingMasks, setPreparingMasks] = useState(false);
+  const [maskError, setMaskError] = useState<string | null>(null);
   const editIdSeq = useRef(1);
   const isBatchMode = mode === "batch";
+
   const hasEmptyEditComment = useMemo(
     () => imageEdits.some((edit) => edit.comment.trim().length === 0),
     [imageEdits]
   );
-  const canSubmit = (instruction.trim().length > 0 || imageEdits.length > 0) && !hasEmptyEditComment;
+  const hasAnyEdit = imageEdits.length > 0;
+  const modeValidationError =
+    editMode === "masked_inpaint" && !hasAnyEdit
+      ? "高精度部分編集モードでは編集ポイントを1つ以上追加してください。"
+      : null;
+  const canSubmit =
+    (instruction.trim().length > 0 || hasAnyEdit) && !hasEmptyEditComment && !modeValidationError;
 
   const toNormalizedPoint = (event: MouseEvent<HTMLDivElement> | PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -119,7 +217,7 @@ export function RevisePanel({
   };
 
   const handleImageClick = (layout: ImageEditLayout) => (event: MouseEvent<HTMLDivElement>) => {
-    if (loading || toolShape !== "point") {
+    if (loading || preparingMasks || toolShape !== "point") {
       return;
     }
     const point = toNormalizedPoint(event);
@@ -127,7 +225,7 @@ export function RevisePanel({
   };
 
   const handlePointerDown = (layout: ImageEditLayout) => (event: PointerEvent<HTMLDivElement>) => {
-    if (loading || toolShape !== "rect") {
+    if (loading || preparingMasks || toolShape !== "rect") {
       return;
     }
     event.preventDefault();
@@ -290,12 +388,112 @@ export function RevisePanel({
     );
   };
 
+  const handleSubmit = async () => {
+    if (loading || preparingMasks || !canSubmit) {
+      return;
+    }
+
+    setMaskError(null);
+    let fourPanelMaskImageDataUrl: string | undefined;
+    let a4MaskImageDataUrl: string | undefined;
+
+    if (editMode === "masked_inpaint") {
+      setPreparingMasks(true);
+      try {
+        const [fourPanelMask, a4Mask] = await Promise.all([
+          buildMaskDataUrl({
+            baseImageDataUrl: previousResult.fourPanelImageDataUrl,
+            edits: imageEdits.filter((edit) => edit.layout === "four-panel-square"),
+            featherPx: maskFeatherPx
+          }),
+          buildMaskDataUrl({
+            baseImageDataUrl: previousResult.a4ImageDataUrl,
+            edits: imageEdits.filter((edit) => edit.layout === "a4-vertical"),
+            featherPx: maskFeatherPx
+          })
+        ]);
+        fourPanelMaskImageDataUrl = fourPanelMask;
+        a4MaskImageDataUrl = a4Mask;
+      } catch (error) {
+        setMaskError(error instanceof Error ? error.message : "マスク生成に失敗しました。");
+        setPreparingMasks(false);
+        return;
+      } finally {
+        setPreparingMasks(false);
+      }
+    }
+
+    await Promise.resolve(
+      onRevise({
+        revisionInstruction: instruction.trim(),
+        imageEdits,
+        editMode,
+        preserveOutsideMask,
+        maskFeatherPx,
+        fourPanelMaskImageDataUrl,
+        a4MaskImageDataUrl
+      })
+    );
+  };
+
   return (
     <section className="rounded-2xl bg-white p-6 shadow-panel">
       <h2 className="text-xl font-bold text-slate-900">STEP5 修正再生成</h2>
       <p className="mt-2 text-sm text-slate-600">
         テキスト指示に加えて、画像上のポイント/範囲指定で複数箇所をまとめて編集できます。
       </p>
+
+      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <p className="text-xs font-semibold text-slate-700">編集モード</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setEditMode("global_rewrite")}
+            className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
+              editMode === "global_rewrite"
+                ? "border-brand-500 bg-brand-50 text-brand-700"
+                : "border-slate-300 bg-white text-slate-700"
+            }`}
+          >
+            通常再生成
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditMode("masked_inpaint")}
+            className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
+              editMode === "masked_inpaint"
+                ? "border-brand-500 bg-brand-50 text-brand-700"
+                : "border-slate-300 bg-white text-slate-700"
+            }`}
+          >
+            高精度部分編集（マスク）
+          </button>
+        </div>
+        {editMode === "masked_inpaint" ? (
+          <div className="mt-3 grid gap-3 rounded-lg border border-slate-200 bg-white p-3 md:grid-cols-2">
+            <label className="inline-flex items-center gap-2 text-xs text-slate-700">
+              <input
+                type="checkbox"
+                checked={preserveOutsideMask}
+                onChange={(event) => setPreserveOutsideMask(event.target.checked)}
+              />
+              マスク外を極力維持する
+            </label>
+            <label className="text-xs text-slate-700">
+              境界ぼかし: {maskFeatherPx}px
+              <input
+                type="range"
+                min={0}
+                max={24}
+                step={1}
+                value={maskFeatherPx}
+                onChange={(event) => setMaskFeatherPx(Number(event.target.value))}
+                className="mt-1 w-full"
+              />
+            </label>
+          </div>
+        ) : null}
+      </div>
 
       <div className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-2">
         <div>
@@ -384,14 +582,16 @@ export function RevisePanel({
           <button
             type="button"
             onClick={() => setImageEdits([])}
-            disabled={loading || imageEdits.length === 0}
+            disabled={loading || preparingMasks || imageEdits.length === 0}
             className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 disabled:opacity-50"
           >
             全削除
           </button>
         </div>
         {imageEdits.length === 0 ? (
-          <p className="mt-2 text-xs text-slate-500">まだ編集ポイントがありません。画像をクリックまたはドラッグして追加してください。</p>
+          <p className="mt-2 text-xs text-slate-500">
+            まだ編集ポイントがありません。画像をクリックまたはドラッグして追加してください。
+          </p>
         ) : (
           <div className="mt-3 space-y-3">
             {imageEdits.map((edit, index) => (
@@ -406,7 +606,7 @@ export function RevisePanel({
                   <button
                     type="button"
                     onClick={() => removeEdit(edit.id)}
-                    disabled={loading}
+                    disabled={loading || preparingMasks}
                     className="rounded-lg border border-rose-300 px-2 py-1 text-xs font-semibold text-rose-700 disabled:opacity-50"
                   >
                     削除
@@ -438,28 +638,40 @@ export function RevisePanel({
           編集ポイントのコメントが未入力です。各ポイントの意図を入力してください。
         </p>
       ) : null}
+      {modeValidationError ? (
+        <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          {modeValidationError}
+        </p>
+      ) : null}
+      {maskError ? (
+        <p className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+          {maskError}
+        </p>
+      ) : null}
 
       <div className="mt-3 flex flex-wrap gap-3">
         <button
           type="button"
           onClick={onBack}
-          disabled={loading}
+          disabled={loading || preparingMasks}
           className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"
         >
           STEP4へ戻る
         </button>
         <button
           type="button"
-          disabled={loading || !canSubmit}
-          onClick={() =>
-            onRevise({
-              revisionInstruction: instruction.trim(),
-              imageEdits
-            })
-          }
+          disabled={loading || preparingMasks || !canSubmit}
+          onClick={() => {
+            void handleSubmit();
+          }}
           className="flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
         >
-          {loading ? (
+          {preparingMasks ? (
+            <>
+              <Spinner size="sm" className="text-white" />
+              <span>マスク生成中...</span>
+            </>
+          ) : loading ? (
             <>
               <Spinner size="sm" className="text-white" />
               <span>{isBatchMode ? "バッチ再生成中..." : "通常再生成中..."}</span>
@@ -472,7 +684,7 @@ export function RevisePanel({
           <button
             type="button"
             onClick={onAdoptRevised}
-            disabled={loading}
+            disabled={loading || preparingMasks}
             className="rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
           >
             修正版を採用してSTEP4へ

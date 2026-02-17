@@ -23,6 +23,7 @@ export type A4Flow = {
 
 export type PatternType = "共感型" | "驚き型" | "体験談型";
 export type GenerationMode = "batch" | "standard";
+export type ImageEditMode = "global_rewrite" | "masked_inpaint";
 export type ImageEditLayout = "four-panel-square" | "a4-vertical";
 export type ImageEditShape = "point" | "rect";
 export type ImageEditKind = "general" | "owner_face" | "wife_face";

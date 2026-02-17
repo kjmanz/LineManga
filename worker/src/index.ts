@@ -23,6 +23,7 @@ type A4Flow = {
 
 type PatternType = "共感型" | "驚き型" | "体験談型";
 type MangaLayout = "four-panel-square" | "a4-vertical";
+type ImageEditMode = "global_rewrite" | "masked_inpaint";
 type ImageEditShape = "point" | "rect";
 type ImageEditKind = "general" | "owner_face" | "wife_face";
 
@@ -312,6 +313,18 @@ const normalizeImageEditKind = (value: unknown): ImageEditKind => {
 const normalizeImageEditLayout = (value: unknown): MangaLayout =>
   value === "a4-vertical" ? "a4-vertical" : "four-panel-square";
 
+const normalizeImageEditMode = (value: unknown): ImageEditMode =>
+  value === "masked_inpaint" ? "masked_inpaint" : "global_rewrite";
+
+const normalizeBoolean = (value: unknown, fallback: boolean) =>
+  typeof value === "boolean" ? value : fallback;
+
+const normalizeMaskFeather = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.min(64, Math.round(value))) : 8;
+
+const normalizeImageDataUrl = (value: unknown) =>
+  typeof value === "string" && value.startsWith("data:image/") ? value : undefined;
+
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 
@@ -408,13 +421,19 @@ const imagePrompt = ({
   pattern,
   layout,
   revisionInstruction,
-  imageEdits = []
+  imageEdits = [],
+  editMode = "global_rewrite",
+  preserveOutsideMask = true,
+  maskFeatherPx = 8
 }: {
   summary: SummaryResult;
   pattern: CompositionPattern;
   layout: MangaLayout;
   revisionInstruction?: string;
   imageEdits?: ImageEditInstruction[];
+  editMode?: ImageEditMode;
+  preserveOutsideMask?: boolean;
+  maskFeatherPx?: number;
 }) => {
   const sizeInstruction =
     layout === "four-panel-square"
@@ -428,9 +447,16 @@ const imagePrompt = ({
 
   const trimmedInstruction = revisionInstruction?.trim() ?? "";
   const isRevision = trimmedInstruction.length > 0 || imageEdits.length > 0;
+  const modeBlock =
+    editMode === "masked_inpaint"
+      ? `- 高精度部分編集モードを使用。入力されるマスク画像は「白=編集」「黒=維持」。
+- マスク境界ぼかしの目安: ${maskFeatherPx}px
+- マスク外は${preserveOutsideMask ? "可能な限り元画像の画素と構図を維持" : "最小限の変化だけ許容"}。`
+      : "- 通常再生成モード。編集ポイント指示を優先して反映。";
   const revisionBlock = isRevision
     ? `修正指示:
 ${trimmedInstruction ? `- 全体指示: ${trimmedInstruction}` : "- 全体指示: なし"}
+${modeBlock}
 ${buildImageEditBlock(layout, imageEdits)}
 上記指示を必ず反映して再生成する。`
     : "初回生成。";
@@ -864,11 +890,15 @@ const toInlinePartFromDataUrl = (dataUrl: string): GeminiPart => {
 const buildMangaImageParts = ({
   prompt,
   referenceDataUrls = [],
-  previousImageDataUrl
+  previousImageDataUrl,
+  maskImageDataUrl,
+  editMode = "global_rewrite"
 }: {
   prompt: string;
   referenceDataUrls?: string[];
   previousImageDataUrl?: string;
+  maskImageDataUrl?: string;
+  editMode?: ImageEditMode;
 }) => {
   const parts: GeminiPart[] = [{ text: prompt }];
 
@@ -884,6 +914,13 @@ const buildMangaImageParts = ({
   if (previousImageDataUrl) {
     parts.push({ text: "以下は前回生成画像です。構図の意図を保ちながら修正してください。" });
     parts.push(toInlinePartFromDataUrl(previousImageDataUrl));
+  }
+
+  if (editMode === "masked_inpaint" && maskImageDataUrl) {
+    parts.push({
+      text: "以下は編集マスク画像です。白い領域のみ編集し、黒い領域は変更しないでください。"
+    });
+    parts.push(toInlinePartFromDataUrl(maskImageDataUrl));
   }
 
   return parts;
@@ -907,17 +944,23 @@ const generateMangaImage = async ({
   env,
   prompt,
   referenceDataUrls = [],
-  previousImageDataUrl
+  previousImageDataUrl,
+  maskImageDataUrl,
+  editMode = "global_rewrite"
 }: {
   env: Env;
   prompt: string;
   referenceDataUrls?: string[];
   previousImageDataUrl?: string;
+  maskImageDataUrl?: string;
+  editMode?: ImageEditMode;
 }) => {
   const parts = buildMangaImageParts({
     prompt,
     referenceDataUrls,
-    previousImageDataUrl
+    previousImageDataUrl,
+    maskImageDataUrl,
+    editMode
   });
   const requestBody = buildMangaImageRequestBody(parts);
   const response = await withImageModelFallback(env, (modelId) => requestGemini(env, modelId, requestBody));
@@ -1353,18 +1396,24 @@ const toBatchImageRequest = ({
   layout,
   prompt,
   referenceDataUrls,
-  previousImageDataUrl
+  previousImageDataUrl,
+  maskImageDataUrl,
+  editMode = "global_rewrite"
 }: {
   pattern: CompositionPattern;
   layout: MangaLayout;
   prompt: string;
   referenceDataUrls: string[];
   previousImageDataUrl?: string;
+  maskImageDataUrl?: string;
+  editMode?: ImageEditMode;
 }): GeminiBatchInlinedRequest => {
   const parts = buildMangaImageParts({
     prompt,
     referenceDataUrls,
-    previousImageDataUrl
+    previousImageDataUrl,
+    maskImageDataUrl,
+    editMode
   });
   return {
     request: buildMangaImageRequestBody(parts),
@@ -1505,26 +1554,38 @@ const buildPatternPrompts = ({
   summary,
   pattern,
   revisionInstruction,
-  imageEdits = []
+  imageEdits = [],
+  editMode = "global_rewrite",
+  preserveOutsideMask = true,
+  maskFeatherPx = 8
 }: {
   summary: SummaryResult;
   pattern: CompositionPattern;
   revisionInstruction?: string;
   imageEdits?: ImageEditInstruction[];
+  editMode?: ImageEditMode;
+  preserveOutsideMask?: boolean;
+  maskFeatherPx?: number;
 }) => {
   const fourPanelPrompt = imagePrompt({
     summary,
     pattern,
     layout: "four-panel-square",
     revisionInstruction,
-    imageEdits
+    imageEdits,
+    editMode,
+    preserveOutsideMask,
+    maskFeatherPx
   });
   const a4Prompt = imagePrompt({
     summary,
     pattern,
     layout: "a4-vertical",
     revisionInstruction,
-    imageEdits
+    imageEdits,
+    editMode,
+    preserveOutsideMask,
+    maskFeatherPx
   });
   return { fourPanelPrompt, a4Prompt };
 };
@@ -1580,6 +1641,11 @@ const revise = async (request: Request, env: Env, origin: string | null) => {
     pattern?: unknown;
     revisionInstruction?: string;
     imageEdits?: unknown;
+    editMode?: unknown;
+    preserveOutsideMask?: unknown;
+    maskFeatherPx?: unknown;
+    fourPanelMaskImageDataUrl?: unknown;
+    a4MaskImageDataUrl?: unknown;
     ownerReferenceDataUrl?: string;
     wifeReferenceDataUrl?: string;
     previousFourPanelImageDataUrl?: string;
@@ -1588,8 +1654,16 @@ const revise = async (request: Request, env: Env, origin: string | null) => {
 
   const revisionInstruction = body.revisionInstruction?.trim() ?? "";
   const imageEdits = normalizeImageEdits(body.imageEdits);
+  const editMode = normalizeImageEditMode(body.editMode);
+  const preserveOutsideMask = normalizeBoolean(body.preserveOutsideMask, true);
+  const maskFeatherPx = normalizeMaskFeather(body.maskFeatherPx);
+  const fourPanelMaskImageDataUrl = normalizeImageDataUrl(body.fourPanelMaskImageDataUrl);
+  const a4MaskImageDataUrl = normalizeImageDataUrl(body.a4MaskImageDataUrl);
   if (!revisionInstruction && imageEdits.length === 0) {
     return badRequest("修正指示または編集ポイントを入力してください。", origin);
+  }
+  if (editMode === "masked_inpaint" && (!fourPanelMaskImageDataUrl || !a4MaskImageDataUrl)) {
+    return badRequest("高精度部分編集モードでは4コマ/A4のマスク画像が必要です。", origin);
   }
 
   const summary = normalizeSummary(body.summary);
@@ -1603,7 +1677,10 @@ const revise = async (request: Request, env: Env, origin: string | null) => {
     summary,
     pattern,
     revisionInstruction,
-    imageEdits
+    imageEdits,
+    editMode,
+    preserveOutsideMask,
+    maskFeatherPx
   });
 
   const [fourPanelImageDataUrl, a4ImageDataUrl] = await Promise.all([
@@ -1611,13 +1688,17 @@ const revise = async (request: Request, env: Env, origin: string | null) => {
       env,
       prompt: fourPanelPrompt,
       referenceDataUrls,
-      previousImageDataUrl: body.previousFourPanelImageDataUrl
+      previousImageDataUrl: body.previousFourPanelImageDataUrl,
+      maskImageDataUrl: fourPanelMaskImageDataUrl,
+      editMode
     }),
     generateMangaImage({
       env,
       prompt: a4Prompt,
       referenceDataUrls,
-      previousImageDataUrl: body.previousA4ImageDataUrl
+      previousImageDataUrl: body.previousA4ImageDataUrl,
+      maskImageDataUrl: a4MaskImageDataUrl,
+      editMode
     })
   ]);
 
@@ -1761,6 +1842,11 @@ const batchRevise = async (request: Request, env: Env, origin: string | null) =>
     pattern?: unknown;
     revisionInstruction?: string;
     imageEdits?: unknown;
+    editMode?: unknown;
+    preserveOutsideMask?: unknown;
+    maskFeatherPx?: unknown;
+    fourPanelMaskImageDataUrl?: unknown;
+    a4MaskImageDataUrl?: unknown;
     ownerReferenceDataUrl?: string;
     wifeReferenceDataUrl?: string;
     previousFourPanelImageDataUrl?: string;
@@ -1769,8 +1855,16 @@ const batchRevise = async (request: Request, env: Env, origin: string | null) =>
 
   const revisionInstruction = body.revisionInstruction?.trim() ?? "";
   const imageEdits = normalizeImageEdits(body.imageEdits);
+  const editMode = normalizeImageEditMode(body.editMode);
+  const preserveOutsideMask = normalizeBoolean(body.preserveOutsideMask, true);
+  const maskFeatherPx = normalizeMaskFeather(body.maskFeatherPx);
+  const fourPanelMaskImageDataUrl = normalizeImageDataUrl(body.fourPanelMaskImageDataUrl);
+  const a4MaskImageDataUrl = normalizeImageDataUrl(body.a4MaskImageDataUrl);
   if (!revisionInstruction && imageEdits.length === 0) {
     return badRequest("修正指示または編集ポイントを入力してください。", origin);
+  }
+  if (editMode === "masked_inpaint" && (!fourPanelMaskImageDataUrl || !a4MaskImageDataUrl)) {
+    return badRequest("高精度部分編集モードでは4コマ/A4のマスク画像が必要です。", origin);
   }
 
   const summary = normalizeSummary(body.summary);
@@ -1783,7 +1877,10 @@ const batchRevise = async (request: Request, env: Env, origin: string | null) =>
     summary,
     pattern,
     revisionInstruction,
-    imageEdits
+    imageEdits,
+    editMode,
+    preserveOutsideMask,
+    maskFeatherPx
   });
 
   const requests: GeminiBatchInlinedRequest[] = [
@@ -1792,14 +1889,18 @@ const batchRevise = async (request: Request, env: Env, origin: string | null) =>
       layout: "four-panel-square",
       prompt: fourPanelPrompt,
       referenceDataUrls,
-      previousImageDataUrl: body.previousFourPanelImageDataUrl
+      previousImageDataUrl: body.previousFourPanelImageDataUrl,
+      maskImageDataUrl: fourPanelMaskImageDataUrl,
+      editMode
     }),
     toBatchImageRequest({
       pattern,
       layout: "a4-vertical",
       prompt: a4Prompt,
       referenceDataUrls,
-      previousImageDataUrl: body.previousA4ImageDataUrl
+      previousImageDataUrl: body.previousA4ImageDataUrl,
+      maskImageDataUrl: a4MaskImageDataUrl,
+      editMode
     })
   ];
 

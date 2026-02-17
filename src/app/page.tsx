@@ -15,6 +15,7 @@ import {
   type GenerationMode,
   type GenerationResult,
   type ImageEditInstruction,
+  type ImageEditMode,
   type SummaryResult
 } from "@/lib/types";
 
@@ -663,10 +664,20 @@ export default function Home() {
 
   const handleRevise = async ({
     revisionInstruction,
-    imageEdits
+    imageEdits,
+    editMode,
+    preserveOutsideMask,
+    maskFeatherPx,
+    fourPanelMaskImageDataUrl,
+    a4MaskImageDataUrl
   }: {
     revisionInstruction: string;
     imageEdits: ImageEditInstruction[];
+    editMode: ImageEditMode;
+    preserveOutsideMask: boolean;
+    maskFeatherPx: number;
+    fourPanelMaskImageDataUrl?: string;
+    a4MaskImageDataUrl?: string;
   }) => {
     if (!selectedPattern || !generation) {
       setError("再生成前にSTEP3で生成してください。");
@@ -690,6 +701,11 @@ export default function Home() {
           wifeReferenceDataUrl,
           revisionInstruction: normalizedInstruction,
           imageEdits,
+          editMode,
+          preserveOutsideMask,
+          maskFeatherPx,
+          fourPanelMaskImageDataUrl,
+          a4MaskImageDataUrl,
           previousFourPanelImageDataUrl: generation.fourPanelImageDataUrl,
           previousA4ImageDataUrl: generation.a4ImageDataUrl
         });
@@ -713,6 +729,11 @@ export default function Home() {
           wifeReferenceDataUrl,
           revisionInstruction: normalizedInstruction,
           imageEdits,
+          editMode,
+          preserveOutsideMask,
+          maskFeatherPx,
+          fourPanelMaskImageDataUrl,
+          a4MaskImageDataUrl,
           previousFourPanelImageDataUrl: generation.fourPanelImageDataUrl,
           previousA4ImageDataUrl: generation.a4ImageDataUrl
         });
