@@ -23,6 +23,19 @@ type A4Flow = {
 
 type PatternType = "共感型" | "驚き型" | "体験談型";
 type MangaLayout = "four-panel-square" | "a4-vertical";
+type ImageEditShape = "point" | "rect";
+type ImageEditKind = "general" | "owner_face" | "wife_face";
+
+type ImageEditInstruction = {
+  layout: MangaLayout;
+  shape: ImageEditShape;
+  kind: ImageEditKind;
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  comment: string;
+};
 
 type CompositionPattern = {
   id: string;
@@ -277,16 +290,131 @@ const panelText = (pattern: CompositionPattern) =>
     )
     .join("\n");
 
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+
+const toPercent = (value: number) => `${Math.round(value * 1000) / 10}%`;
+
+const defaultEditCommentByKind: Record<ImageEditKind, string> = {
+  general: "",
+  owner_face: "この箇所の顔を店主参照画像に合わせる",
+  wife_face: "この箇所の顔を妻参照画像に合わせる"
+};
+
+const normalizeImageEditShape = (value: unknown): ImageEditShape => (value === "rect" ? "rect" : "point");
+
+const normalizeImageEditKind = (value: unknown): ImageEditKind => {
+  if (value === "owner_face" || value === "wife_face") {
+    return value;
+  }
+  return "general";
+};
+
+const normalizeImageEditLayout = (value: unknown): MangaLayout =>
+  value === "a4-vertical" ? "a4-vertical" : "four-panel-square";
+
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
+
+const normalizeImageEdits = (raw: unknown): ImageEditInstruction[] => {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const normalized: ImageEditInstruction[] = [];
+
+  for (const item of raw.slice(0, 30)) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const source = item as Record<string, unknown>;
+    if (!isFiniteNumber(source.x) || !isFiniteNumber(source.y)) {
+      continue;
+    }
+
+    const layout = normalizeImageEditLayout(source.layout);
+    const shape = normalizeImageEditShape(source.shape);
+    const kind = normalizeImageEditKind(source.kind);
+    const commentSource = typeof source.comment === "string" ? source.comment.trim() : "";
+    const comment = commentSource || defaultEditCommentByKind[kind];
+    const x = clamp01(source.x);
+    const y = clamp01(source.y);
+
+    if (shape === "rect" && isFiniteNumber(source.width) && isFiniteNumber(source.height)) {
+      const width = clamp01(source.width);
+      const height = clamp01(source.height);
+      if (width >= 0.005 && height >= 0.005) {
+        normalized.push({
+          layout,
+          shape,
+          kind,
+          x,
+          y,
+          width,
+          height,
+          comment
+        });
+        continue;
+      }
+    }
+
+    normalized.push({
+      layout,
+      shape: "point",
+      kind,
+      x,
+      y,
+      comment
+    });
+  }
+
+  return normalized;
+};
+
+const imageEditKindLabel: Record<ImageEditKind, string> = {
+  general: "通常修正",
+  owner_face: "店主顔再生成",
+  wife_face: "妻顔再生成"
+};
+
+const imageEditHintByKind: Record<ImageEditKind, string> = {
+  general: "この箇所のみ編集し、他の見た目はなるべく維持。",
+  owner_face: "この箇所の顔は店主参照画像に一致させる。",
+  wife_face: "この箇所の顔は妻参照画像に一致させる。"
+};
+
+const formatImageEdit = (edit: ImageEditInstruction, index: number) => {
+  const areaText =
+    edit.shape === "rect"
+      ? `範囲: 左上(${toPercent(edit.x)}, ${toPercent(edit.y)}) / 幅${toPercent(edit.width ?? 0)} / 高さ${toPercent(edit.height ?? 0)}`
+      : `ポイント: (${toPercent(edit.x)}, ${toPercent(edit.y)})`;
+
+  const instruction = edit.comment.trim().length > 0 ? edit.comment.trim() : "指定箇所を自然に修正";
+  return `${index + 1}. ${areaText} / 種別: ${imageEditKindLabel[edit.kind]}
+- 修正内容: ${instruction}
+- 追加条件: ${imageEditHintByKind[edit.kind]}`;
+};
+
+const buildImageEditBlock = (layout: MangaLayout, imageEdits: ImageEditInstruction[]) => {
+  const targetEdits = imageEdits.filter((edit) => edit.layout === layout);
+  if (targetEdits.length === 0) {
+    return "編集ポイント指定: なし。この画像は前回画像の構図・顔・文言を可能な限り維持する。";
+  }
+  return `編集ポイント指定 (${targetEdits.length}件):
+${targetEdits.map(formatImageEdit).join("\n")}
+- 指定箇所以外は変更しない。`;
+};
+
 const imagePrompt = ({
   summary,
   pattern,
   layout,
-  revisionInstruction
+  revisionInstruction,
+  imageEdits = []
 }: {
   summary: SummaryResult;
   pattern: CompositionPattern;
   layout: MangaLayout;
   revisionInstruction?: string;
+  imageEdits?: ImageEditInstruction[];
 }) => {
   const sizeInstruction =
     layout === "four-panel-square"
@@ -298,9 +426,12 @@ const imagePrompt = ({
       ? "4コマは田の字または縦1列で読みやすく配置。"
       : "A4は4コマ枠(均等4分割)を使わず、メインビジュアル+吹き出し+補助カットで視線誘導を設計する。";
 
-  const revisionBlock = revisionInstruction
+  const trimmedInstruction = revisionInstruction?.trim() ?? "";
+  const isRevision = trimmedInstruction.length > 0 || imageEdits.length > 0;
+  const revisionBlock = isRevision
     ? `修正指示:
-- ${revisionInstruction}
+${trimmedInstruction ? `- 全体指示: ${trimmedInstruction}` : "- 全体指示: なし"}
+${buildImageEditBlock(layout, imageEdits)}
 上記指示を必ず反映して再生成する。`
     : "初回生成。";
 
@@ -1373,23 +1504,27 @@ const compose = async (request: Request, env: Env, origin: string | null) => {
 const buildPatternPrompts = ({
   summary,
   pattern,
-  revisionInstruction
+  revisionInstruction,
+  imageEdits = []
 }: {
   summary: SummaryResult;
   pattern: CompositionPattern;
   revisionInstruction?: string;
+  imageEdits?: ImageEditInstruction[];
 }) => {
   const fourPanelPrompt = imagePrompt({
     summary,
     pattern,
     layout: "four-panel-square",
-    revisionInstruction
+    revisionInstruction,
+    imageEdits
   });
   const a4Prompt = imagePrompt({
     summary,
     pattern,
     layout: "a4-vertical",
-    revisionInstruction
+    revisionInstruction,
+    imageEdits
   });
   return { fourPanelPrompt, a4Prompt };
 };
@@ -1444,15 +1579,17 @@ const revise = async (request: Request, env: Env, origin: string | null) => {
     summary?: unknown;
     pattern?: unknown;
     revisionInstruction?: string;
+    imageEdits?: unknown;
     ownerReferenceDataUrl?: string;
     wifeReferenceDataUrl?: string;
     previousFourPanelImageDataUrl?: string;
     previousA4ImageDataUrl?: string;
   };
 
-  const revisionInstruction = body.revisionInstruction?.trim();
-  if (!revisionInstruction) {
-    return badRequest("修正指示を入力してください。", origin);
+  const revisionInstruction = body.revisionInstruction?.trim() ?? "";
+  const imageEdits = normalizeImageEdits(body.imageEdits);
+  if (!revisionInstruction && imageEdits.length === 0) {
+    return badRequest("修正指示または編集ポイントを入力してください。", origin);
   }
 
   const summary = normalizeSummary(body.summary);
@@ -1465,7 +1602,8 @@ const revise = async (request: Request, env: Env, origin: string | null) => {
   const { fourPanelPrompt, a4Prompt } = buildPatternPrompts({
     summary,
     pattern,
-    revisionInstruction
+    revisionInstruction,
+    imageEdits
   });
 
   const [fourPanelImageDataUrl, a4ImageDataUrl] = await Promise.all([
@@ -1622,15 +1760,17 @@ const batchRevise = async (request: Request, env: Env, origin: string | null) =>
     summary?: unknown;
     pattern?: unknown;
     revisionInstruction?: string;
+    imageEdits?: unknown;
     ownerReferenceDataUrl?: string;
     wifeReferenceDataUrl?: string;
     previousFourPanelImageDataUrl?: string;
     previousA4ImageDataUrl?: string;
   };
 
-  const revisionInstruction = body.revisionInstruction?.trim();
-  if (!revisionInstruction) {
-    return badRequest("修正指示を入力してください。", origin);
+  const revisionInstruction = body.revisionInstruction?.trim() ?? "";
+  const imageEdits = normalizeImageEdits(body.imageEdits);
+  if (!revisionInstruction && imageEdits.length === 0) {
+    return badRequest("修正指示または編集ポイントを入力してください。", origin);
   }
 
   const summary = normalizeSummary(body.summary);
@@ -1642,7 +1782,8 @@ const batchRevise = async (request: Request, env: Env, origin: string | null) =>
   const { fourPanelPrompt, a4Prompt } = buildPatternPrompts({
     summary,
     pattern,
-    revisionInstruction
+    revisionInstruction,
+    imageEdits
   });
 
   const requests: GeminiBatchInlinedRequest[] = [

@@ -14,6 +14,7 @@ import {
   type CompositionPattern,
   type GenerationMode,
   type GenerationResult,
+  type ImageEditInstruction,
   type SummaryResult
 } from "@/lib/types";
 
@@ -660,9 +661,20 @@ export default function Home() {
     }
   };
 
-  const handleRevise = async (revisionInstruction: string) => {
+  const handleRevise = async ({
+    revisionInstruction,
+    imageEdits
+  }: {
+    revisionInstruction: string;
+    imageEdits: ImageEditInstruction[];
+  }) => {
     if (!selectedPattern || !generation) {
       setError("再生成前にSTEP3で生成してください。");
+      return;
+    }
+    const normalizedInstruction = revisionInstruction.trim();
+    if (!normalizedInstruction && imageEdits.length === 0) {
+      setError("修正指示か編集ポイントを1つ以上入力してください。");
       return;
     }
     try {
@@ -676,7 +688,8 @@ export default function Home() {
           pattern: selectedPattern,
           ownerReferenceDataUrl,
           wifeReferenceDataUrl,
-          revisionInstruction,
+          revisionInstruction: normalizedInstruction,
+          imageEdits,
           previousFourPanelImageDataUrl: generation.fourPanelImageDataUrl,
           previousA4ImageDataUrl: generation.a4ImageDataUrl
         });
@@ -698,7 +711,8 @@ export default function Home() {
           pattern: selectedPattern,
           ownerReferenceDataUrl,
           wifeReferenceDataUrl,
-          revisionInstruction,
+          revisionInstruction: normalizedInstruction,
+          imageEdits,
           previousFourPanelImageDataUrl: generation.fourPanelImageDataUrl,
           previousA4ImageDataUrl: generation.a4ImageDataUrl
         });
