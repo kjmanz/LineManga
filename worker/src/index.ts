@@ -1908,6 +1908,7 @@ const batchRevise = async (request: Request, env: Env, origin: string | null) =>
     summary?: unknown;
     pattern?: unknown;
     revisionInstruction?: string;
+    reviseTargets?: unknown;
     imageEdits?: unknown;
     editMode?: unknown;
     preserveOutsideMask?: unknown;
@@ -1921,6 +1922,9 @@ const batchRevise = async (request: Request, env: Env, origin: string | null) =>
   };
 
   const revisionInstruction = body.revisionInstruction?.trim() ?? "";
+  const reviseTargets = normalizeReviseTargets(body.reviseTargets);
+  const shouldReviseFourPanel = reviseTargets.includes("four-panel-square");
+  const shouldReviseA4 = reviseTargets.includes("a4-vertical");
   const imageEdits = normalizeImageEdits(body.imageEdits);
   const editMode = normalizeImageEditMode(body.editMode);
   const preserveOutsideMask = normalizeBoolean(body.preserveOutsideMask, true);
@@ -1930,8 +1934,13 @@ const batchRevise = async (request: Request, env: Env, origin: string | null) =>
   if (!revisionInstruction && imageEdits.length === 0) {
     return badRequest("修正指示または編集ポイントを入力してください。", origin);
   }
-  if (editMode === "masked_inpaint" && (!fourPanelMaskImageDataUrl || !a4MaskImageDataUrl)) {
-    return badRequest("高精度部分編集モードでは4コマ/A4のマスク画像が必要です。", origin);
+  if (editMode === "masked_inpaint") {
+    if (shouldReviseFourPanel && !fourPanelMaskImageDataUrl) {
+      return badRequest("高精度部分編集モードで4コマを修正する場合は4コママスク画像が必要です。", origin);
+    }
+    if (shouldReviseA4 && !a4MaskImageDataUrl) {
+      return badRequest("高精度部分編集モードでA4を修正する場合はA4マスク画像が必要です。", origin);
+    }
   }
 
   const summary = normalizeSummary(body.summary);
@@ -1950,26 +1959,36 @@ const batchRevise = async (request: Request, env: Env, origin: string | null) =>
     maskFeatherPx
   });
 
-  const requests: GeminiBatchInlinedRequest[] = [
-    toBatchImageRequest({
-      pattern,
-      layout: "four-panel-square",
-      prompt: fourPanelPrompt,
-      referenceDataUrls,
-      previousImageDataUrl: body.previousFourPanelImageDataUrl,
-      maskImageDataUrl: fourPanelMaskImageDataUrl,
-      editMode
-    }),
-    toBatchImageRequest({
-      pattern,
-      layout: "a4-vertical",
-      prompt: a4Prompt,
-      referenceDataUrls,
-      previousImageDataUrl: body.previousA4ImageDataUrl,
-      maskImageDataUrl: a4MaskImageDataUrl,
-      editMode
-    })
-  ];
+  const requests: GeminiBatchInlinedRequest[] = [];
+  if (shouldReviseFourPanel) {
+    requests.push(
+      toBatchImageRequest({
+        pattern,
+        layout: "four-panel-square",
+        prompt: fourPanelPrompt,
+        referenceDataUrls,
+        previousImageDataUrl: body.previousFourPanelImageDataUrl,
+        maskImageDataUrl: fourPanelMaskImageDataUrl,
+        editMode
+      })
+    );
+  }
+  if (shouldReviseA4) {
+    requests.push(
+      toBatchImageRequest({
+        pattern,
+        layout: "a4-vertical",
+        prompt: a4Prompt,
+        referenceDataUrls,
+        previousImageDataUrl: body.previousA4ImageDataUrl,
+        maskImageDataUrl: a4MaskImageDataUrl,
+        editMode
+      })
+    );
+  }
+  if (requests.length === 0) {
+    return badRequest("修正対象を選択してください。", origin);
+  }
 
   const batchName = await createImageBatch({
     env,
@@ -1981,7 +2000,8 @@ const batchRevise = async (request: Request, env: Env, origin: string | null) =>
     {
       batchName,
       requestCount: requests.length,
-      pollIntervalMs: BATCH_POLL_INTERVAL_MS
+      pollIntervalMs: BATCH_POLL_INTERVAL_MS,
+      revisedLayouts: reviseTargets
     },
     200,
     origin
