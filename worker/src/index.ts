@@ -118,10 +118,10 @@ type GeminiBatchOperation = {
   metadata?: Record<string, unknown>;
   response?: {
     inlinedResponses?:
-      | GeminiBatchInlinedResponse[]
-      | {
-          inlinedResponses?: GeminiBatchInlinedResponse[];
-        };
+    | GeminiBatchInlinedResponse[]
+    | {
+      inlinedResponses?: GeminiBatchInlinedResponse[];
+    };
     responsesFile?: string;
     state?: string;
   } & Record<string, unknown>;
@@ -179,7 +179,7 @@ const API_BASE = `${API_ROOT}/models`;
 const FILE_API_BASE = `${API_ROOT}/files`;
 const FILE_UPLOAD_API = "https://generativelanguage.googleapis.com/upload/v1beta/files";
 const DEFAULT_TEXT_MODEL = "gemini-3-flash-preview";
-const DEFAULT_IMAGE_MODEL = "gemini-3-pro-image-preview";
+const DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image-preview";
 const MODEL_LIST_CACHE_MS = 1000 * 60 * 10;
 const GEMINI_MAX_RETRIES = 3;
 const GEMINI_RETRY_BASE_DELAY_MS = 1200;
@@ -189,11 +189,13 @@ const BATCH_FILE_MIME_TYPE = "application/jsonl";
 const BATCH_KEY_PREFIX = "line-manga";
 const BATCH_TERMINAL_KEYWORDS = ["SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED"];
 const IMAGE_MODEL_ALIASES: Record<string, string> = {
-  "nano-banana-pro": DEFAULT_IMAGE_MODEL,
-  "nano-banana": DEFAULT_IMAGE_MODEL
+  "nano-banana-2": DEFAULT_IMAGE_MODEL,
+  "nano-banana-pro": "gemini-3-pro-image-preview",
+  "nano-banana": "gemini-3-pro-image-preview"
 };
 const IMAGE_MODEL_PRIORITY = [
   DEFAULT_IMAGE_MODEL,
+  "gemini-3-pro-image-preview",
   "gemini-2.5-flash-image-preview",
   "gemini-2.0-flash-preview-image-generation",
   "gemini-2.0-flash-exp-image-generation",
@@ -202,9 +204,9 @@ const IMAGE_MODEL_PRIORITY = [
 
 let geminiModelCache:
   | {
-      expiresAt: number;
-      models: GeminiModel[];
-    }
+    expiresAt: number;
+    models: GeminiModel[];
+  }
   | null = null;
 
 const sanitizeCtrTerm = (value: string) =>
