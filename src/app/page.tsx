@@ -7,6 +7,7 @@ import { InputForm } from "@/components/InputForm";
 import { MangaPreview } from "@/components/MangaPreview";
 import { PatternCards } from "@/components/PatternCards";
 import { RevisePanel } from "@/components/RevisePanel";
+import { Stepper } from "@/components/Stepper";
 import { SummaryView } from "@/components/SummaryView";
 import {
   normalizeSummary,
@@ -90,13 +91,13 @@ const resolveApiUrl = (path: string) => {
   return `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
 };
 
-const STEP_LABELS = [
-  "1. 投稿文入力",
-  "2. 要点確認",
-  "3. 構成案選択",
-  "4. 漫画プレビュー",
-  "5. 修正再生成"
-];
+const WORKFLOW_STEPS = [
+  { label: "1. 投稿文入力", short: "投稿" },
+  { label: "2. 要点確認", short: "要点" },
+  { label: "3. 構成案選択", short: "構成" },
+  { label: "4. 漫画プレビュー", short: "プレビュー" },
+  { label: "5. 修正再生成", short: "修正" }
+] as const;
 
 const INITIAL_SUMMARY: SummaryResult = normalizeSummary(null);
 const OWNER_REFERENCE_PATH = "references/owner.png";
@@ -830,30 +831,50 @@ export default function Home() {
   };
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8 md:px-8">
-      <header className="flex items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-panel backdrop-blur">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 md:text-3xl">LINE投稿 漫画化エージェント</h1>
-          <p className="mt-2 text-sm text-slate-600">
-            LINE投稿文から「4コマ(1080x1080)」と「A4縦1ページ漫画(2480x3508)」を同時生成します。
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowResetDialog(true)}
-          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-          disabled={step === 1 && !postText}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-            <path
-              fillRule="evenodd"
-              d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0v2.43l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z"
-              clipRule="evenodd"
-            />
-          </svg>
-          <span className="hidden sm:inline">新規作成</span>
-        </button>
-      </header>
+    <main className="min-h-screen px-4 py-6 pb-10 md:px-8">
+      <div className="mx-auto max-w-6xl">
+        <header className="app-panel flex flex-col gap-5 p-5 sm:p-6 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
+          <div className="flex gap-4 sm:items-start">
+            <div
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 via-brand-600 to-brand-800 text-sm font-black text-white shadow-lg shadow-brand-500/20 sm:h-14 sm:w-14 sm:text-base"
+              aria-hidden
+            >
+              LM
+            </div>
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-brand-600/90 sm:text-xs">
+                LINE Manga Studio
+              </p>
+              <h1 className="text-balance text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
+                LINE投稿 漫画化エージェント
+              </h1>
+              <p className="text-pretty mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
+                投稿文から「4コマ (1080×1080)」と「A4 縦1ページ (2480×3508)」を同時に生成し、必要なら指示とマスクで微調整します。
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowResetDialog(true)}
+            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 self-start rounded-xl border border-slate-200 bg-white/90 px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={step === 1 && !postText}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="h-4 w-4 text-slate-500"
+            >
+              <path
+                fillRule="evenodd"
+                d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0v2.43l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z"
+                clipRule="evenodd"
+              />
+            </svg>
+            <span className="hidden sm:inline">新規作成</span>
+            <span className="sm:hidden">新規</span>
+          </button>
+        </header>
 
       <ConfirmDialog
         open={showResetDialog}
@@ -864,137 +885,150 @@ export default function Home() {
         onConfirm={handleReset}
         onCancel={() => setShowResetDialog(false)}
       />
-      <GenerationSettings mode={generationMode} loading={loading} onChange={handleGenerationModeChange} />
+        <GenerationSettings mode={generationMode} loading={loading} onChange={handleGenerationModeChange} />
 
-      <ol className="mt-5 grid gap-2 rounded-xl bg-slate-900 p-3 text-xs text-white md:grid-cols-5 md:text-sm">
-        {STEP_LABELS.map((label, index) => {
-          const stepNumber = index + 1;
-          const isCurrent = step === stepNumber;
-          const isCompleted = step > stepNumber;
-          return (
-            <li
-              key={label}
-              className={`rounded-lg px-3 py-2 ${
-                isCurrent
-                  ? "bg-brand-500 font-bold"
-                  : isCompleted
-                  ? "bg-emerald-500 font-semibold text-emerald-950"
-                  : "bg-slate-700"
-              }`}
-            >
-              {label}
-            </li>
-          );
-        })}
-      </ol>
+        <Stepper current={step} items={WORKFLOW_STEPS} />
 
-      {error ? (
-        <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {error}
-        </p>
-      ) : null}
-      {batchStatusMessage ? (
-        <p className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-          {batchStatusMessage}
-        </p>
-      ) : null}
-      {batchWarningMessage ? (
-        <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          {batchWarningMessage}
-        </p>
-      ) : null}
+        <div className="mt-4 space-y-3">
+          {error ? (
+            <p className="flex gap-3 rounded-xl border border-rose-200/90 bg-rose-50/95 px-4 py-3 text-sm text-rose-800 shadow-sm">
+              <span className="mt-0.5 shrink-0 text-rose-500" aria-hidden>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+                  <path
+                    fillRule="evenodd"
+                    d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </span>
+              <span className="min-w-0 leading-relaxed">{error}</span>
+            </p>
+          ) : null}
+          {batchStatusMessage ? (
+            <p className="flex gap-3 rounded-xl border border-sky-200/90 bg-sky-50/95 px-4 py-3 text-sm text-sky-900 shadow-sm">
+              <span className="mt-0.5 shrink-0 text-sky-500" aria-hidden>
+                <svg className="h-5 w-5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+              </span>
+              <span className="min-w-0 font-medium leading-relaxed">{batchStatusMessage}</span>
+            </p>
+          ) : null}
+          {batchWarningMessage ? (
+            <p className="flex gap-3 rounded-xl border border-amber-200/90 bg-amber-50/95 px-4 py-3 text-sm text-amber-900 shadow-sm">
+              <span className="mt-0.5 shrink-0 text-amber-500" aria-hidden>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+                  <path
+                    fillRule="evenodd"
+                    d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 10-2 0v4a1 1 0 102 0v-4zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </span>
+              <span className="min-w-0 leading-relaxed">{batchWarningMessage}</span>
+            </p>
+          ) : null}
+          {!isApiBaseConfigured ? (
+            <p className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 rounded-xl border border-amber-200/90 bg-amber-50/95 px-4 py-3 text-sm text-amber-900 shadow-sm">
+              <code className="rounded-md bg-amber-100/90 px-1.5 py-0.5 font-mono text-[0.85em] text-amber-950">
+                NEXT_PUBLIC_API_BASE_URL
+              </code>
+              <span>が未設定です。Cloudflare Worker の URL を設定してください。</span>
+            </p>
+          ) : null}
+        </div>
 
-      {!isApiBaseConfigured ? (
-        <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          `NEXT_PUBLIC_API_BASE_URL` が未設定です。Cloudflare WorkerのURLを設定してください。
-        </p>
-      ) : null}
+        <section className="mt-6 space-y-5">
+          {step === 1 ? (
+            <InputForm
+              postText={postText}
+              ownerReferenceDataUrl={ownerReferenceDataUrl}
+              wifeReferenceDataUrl={wifeReferenceDataUrl}
+              referenceLoading={referenceLoading}
+              referenceError={referenceError}
+              loading={loading}
+              onPostTextChange={setPostText}
+              onSubmit={handleSummarize}
+            />
+          ) : null}
 
-      <section className="mt-5 space-y-5">
-        {step === 1 ? (
-          <InputForm
-            postText={postText}
-            ownerReferenceDataUrl={ownerReferenceDataUrl}
-            wifeReferenceDataUrl={wifeReferenceDataUrl}
-            referenceLoading={referenceLoading}
-            referenceError={referenceError}
-            loading={loading}
-            onPostTextChange={setPostText}
-            onSubmit={handleSummarize}
-          />
-        ) : null}
+          {step === 2 ? (
+            <SummaryView
+              summary={summary}
+              loading={loading}
+              onChange={setSummary}
+              onBack={() => setStep(1)}
+              onNext={handleCompose}
+            />
+          ) : null}
 
-        {step === 2 ? (
-          <SummaryView
-            summary={summary}
-            loading={loading}
-            onChange={setSummary}
-            onBack={() => setStep(1)}
-            onNext={handleCompose}
-          />
-        ) : null}
+          {step === 3 ? (
+            <PatternCards
+              patterns={patterns}
+              selectedPatternId={selectedPatternId}
+              loading={loading}
+              generationMode={generationMode}
+              onSelect={setSelectedPatternId}
+              onBack={() => setStep(2)}
+              onGenerate={handleGenerate}
+              onGenerateAll={handleGenerateAll}
+            />
+          ) : null}
 
-        {step === 3 ? (
-          <PatternCards
-            patterns={patterns}
-            selectedPatternId={selectedPatternId}
-            loading={loading}
-            generationMode={generationMode}
-            onSelect={setSelectedPatternId}
-            onBack={() => setStep(2)}
-            onGenerate={handleGenerate}
-            onGenerateAll={handleGenerateAll}
-          />
-        ) : null}
+          {(step === 4 || step === 5) && generatedPatternIds.length > 1 ? (
+            <section className="app-panel p-4 sm:p-5">
+              <h3 className="text-sm font-semibold text-slate-800">生成済み構成案</h3>
+              <p className="mt-1 text-xs text-slate-600">表示・修正する構成案を選択できます。</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {patterns
+                  .filter((pattern) => generationByPatternId[pattern.id])
+                  .map((pattern) => {
+                    const selected = pattern.id === selectedPatternId;
+                    return (
+                      <button
+                        key={pattern.id}
+                        type="button"
+                        onClick={() => selectGeneratedPattern(pattern.id)}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+                          selected
+                            ? "border-brand-500 bg-brand-50 text-brand-700 shadow-sm"
+                            : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                        }`}
+                      >
+                        {pattern.patternType} / {pattern.title}
+                      </button>
+                    );
+                  })}
+              </div>
+            </section>
+          ) : null}
 
-        {(step === 4 || step === 5) && generatedPatternIds.length > 1 ? (
-          <section className="rounded-2xl bg-white p-4 shadow-panel">
-            <h3 className="text-sm font-semibold text-slate-800">生成済み構成案</h3>
-            <p className="mt-1 text-xs text-slate-600">表示・修正する構成案を選択できます。</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {patterns
-                .filter((pattern) => generationByPatternId[pattern.id])
-                .map((pattern) => {
-                  const selected = pattern.id === selectedPatternId;
-                  return (
-                    <button
-                      key={pattern.id}
-                      type="button"
-                      onClick={() => selectGeneratedPattern(pattern.id)}
-                      className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
-                        selected
-                          ? "border-brand-500 bg-brand-50 text-brand-700"
-                          : "border-slate-300 bg-white text-slate-700"
-                      }`}
-                    >
-                      {pattern.patternType} / {pattern.title}
-                    </button>
-                  );
-                })}
-            </div>
-          </section>
-        ) : null}
+          {step === 4 && generation ? (
+            <MangaPreview
+              result={generation}
+              generatedImageCount={generatedImageCount}
+              onBack={() => setStep(3)}
+              onOpenRevise={() => setStep(5)}
+            />
+          ) : null}
 
-        {step === 4 && generation ? (
-          <MangaPreview
-            result={generation}
-            generatedImageCount={generatedImageCount}
-            onBack={() => setStep(3)}
-            onOpenRevise={() => setStep(5)}
-          />
-        ) : null}
-
-        {step === 5 && generation ? (
-          <RevisePanel
-            previousResult={generation}
-            revisedResult={revisedGeneration}
-            loading={loading}
-            onBack={() => setStep(4)}
-            onRevise={handleRevise}
-            onAdoptRevised={handleAdoptRevised}
-          />
-        ) : null}
-      </section>
+          {step === 5 && generation ? (
+            <RevisePanel
+              previousResult={generation}
+              revisedResult={revisedGeneration}
+              loading={loading}
+              onBack={() => setStep(4)}
+              onRevise={handleRevise}
+              onAdoptRevised={handleAdoptRevised}
+            />
+          ) : null}
+        </section>
+      </div>
     </main>
   );
 }

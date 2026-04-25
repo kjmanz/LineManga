@@ -36,8 +36,8 @@ const removeListItem = (list: string[], index: number, onApply: (next: string[])
 
 export function SummaryView({ summary, loading, onChange, onBack, onNext }: Props) {
   return (
-    <section className="rounded-2xl bg-white p-6 shadow-panel">
-      <h2 className="text-xl font-bold text-slate-900">STEP2 要点確認</h2>
+    <section className="app-panel p-6">
+      <h2 className="text-xl font-bold tracking-tight text-slate-900">STEP2 要点確認</h2>
       <p className="mt-2 text-sm text-slate-600">
         AIが抽出した要点を必要に応じて編集し、3パターン構成案を生成してください。
       </p>
@@ -46,7 +46,7 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
         <label className="text-sm">
           <span className="mb-1 block font-semibold text-slate-800">メインテーマ</span>
           <input
-            className="w-full rounded-lg border border-slate-200 px-3 py-2"
+            className="app-field w-full"
             value={summary.mainTheme}
             onChange={(event) => onChange({ ...summary, mainTheme: event.target.value })}
           />
@@ -54,7 +54,7 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
         <label className="text-sm">
           <span className="mb-1 block font-semibold text-slate-800">想定読者</span>
           <input
-            className="w-full rounded-lg border border-slate-200 px-3 py-2"
+            className="app-field w-full"
             value={summary.targetPersona}
             onChange={(event) => onChange({ ...summary, targetPersona: event.target.value })}
           />
@@ -67,7 +67,7 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
           {summary.painPoints.map((item, index) => (
             <div key={`pain-${index}`} className="flex gap-2">
               <input
-                className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                className="app-field min-w-0 flex-1 text-sm"
                 value={item}
                 onChange={(event) =>
                   updateList(summary.painPoints, index, event.target.value, (painPoints) =>
@@ -82,7 +82,7 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
                     onChange({ ...summary, painPoints })
                   )
                 }
-                className="rounded-lg border border-slate-300 px-3 text-xs"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
               >
                 削除
               </button>
@@ -92,7 +92,7 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
         <button
           type="button"
           onClick={() => addListItem(summary.painPoints, (painPoints) => onChange({ ...summary, painPoints }))}
-          className="mt-2 rounded-lg border border-brand-500 px-3 py-1 text-xs text-brand-700"
+          className="mt-2 rounded-lg border border-brand-300 bg-brand-50/60 px-3 py-1.5 text-xs font-semibold text-brand-800 transition hover:bg-brand-50"
         >
           困りごとを追加
         </button>
@@ -104,7 +104,7 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
           {summary.keyFacts.map((item, index) => (
             <div key={`fact-${index}`} className="flex gap-2">
               <input
-                className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                className="app-field min-w-0 flex-1 text-sm"
                 value={item}
                 onChange={(event) =>
                   updateList(summary.keyFacts, index, event.target.value, (keyFacts) =>
@@ -117,7 +117,7 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
                 onClick={() =>
                   removeListItem(summary.keyFacts, index, (keyFacts) => onChange({ ...summary, keyFacts }))
                 }
-                className="rounded-lg border border-slate-300 px-3 text-xs"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
               >
                 削除
               </button>
@@ -127,7 +127,7 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
         <button
           type="button"
           onClick={() => addListItem(summary.keyFacts, (keyFacts) => onChange({ ...summary, keyFacts }))}
-          className="mt-2 rounded-lg border border-brand-500 px-3 py-1 text-xs text-brand-700"
+          className="mt-2 rounded-lg border border-brand-300 bg-brand-50/60 px-3 py-1.5 text-xs font-semibold text-brand-800 transition hover:bg-brand-50"
         >
           事実を追加
         </button>
@@ -136,7 +136,7 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
       <label className="mt-4 block text-sm">
         <span className="mb-1 block font-semibold text-slate-800">解決メッセージ</span>
         <textarea
-          className="h-20 w-full rounded-lg border border-slate-200 px-3 py-2"
+          className="app-textarea h-20 resize-y"
           value={summary.solutionMessage}
           onChange={(event) => onChange({ ...summary, solutionMessage: event.target.value })}
         />
@@ -145,7 +145,7 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
       <label className="mt-4 block text-sm">
         <span className="mb-1 block font-semibold text-slate-800">口調メモ</span>
         <input
-          className="w-full rounded-lg border border-slate-200 px-3 py-2"
+          className="app-field w-full"
           value={summary.toneNotes}
           onChange={(event) => onChange({ ...summary, toneNotes: event.target.value })}
         />
@@ -156,7 +156,7 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
           type="button"
           onClick={onBack}
           disabled={loading}
-          className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"
+          className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 disabled:opacity-50"
         >
           STEP1へ戻る
         </button>
@@ -164,7 +164,7 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
           type="button"
           onClick={onNext}
           disabled={loading}
-          className="flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+          className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 py-2 text-sm font-semibold text-white shadow-md shadow-brand-500/15 transition disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
         >
           {loading ? (
             <>

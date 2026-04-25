@@ -25,7 +25,7 @@ export function ConfirmDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="fixed inset-0 bg-black/50" onClick={onCancel} aria-hidden="true" />
       <div
-        className="relative z-10 w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+        className="relative z-10 w-full max-w-md rounded-2xl border border-slate-200/80 bg-white p-6 shadow-2xl shadow-slate-900/10"
         role="dialog"
         aria-modal="true"
         aria-labelledby="dialog-title"

@@ -1,6 +1,7 @@
 "use client";
 
 import type { GenerationMode } from "@/lib/types";
+import { cn } from "@/lib/cn";
 
 type Props = {
   mode: GenerationMode;
@@ -10,36 +11,37 @@ type Props = {
 
 export function GenerationSettings({ mode, loading, onChange }: Props) {
   return (
-    <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-panel">
-      <h2 className="text-sm font-bold text-slate-900">生成設定</h2>
-      <p className="mt-1 text-xs text-slate-600">
-        通常モードは即時レスポンス、Batchモードは待ち時間と引き換えに安価になる場合があります。
-      </p>
-
-      <div className="mt-3 flex flex-wrap gap-2">
+    <section className="app-panel mt-4 flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6 sm:p-5">
+      <div>
+        <h2 className="text-sm font-bold text-slate-900">生成モード</h2>
+        <p className="mt-1 max-w-xl text-xs leading-relaxed text-slate-600">
+          通常は即時レスポンス。Batch は待ち時間と引き換えに割安になる場合があります。
+        </p>
+      </div>
+      <div className="inline-flex w-full rounded-xl border border-slate-200/90 bg-slate-100/70 p-1 sm:w-auto">
         <button
           type="button"
           disabled={loading}
           onClick={() => onChange("standard")}
-          className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
+          className={cn(
+            "min-h-10 flex-1 rounded-lg px-4 py-2 text-xs font-semibold transition sm:min-w-[7.5rem] disabled:cursor-not-allowed disabled:opacity-50",
             mode === "standard"
-              ? "border-brand-500 bg-brand-50 text-brand-700"
-              : "border-slate-300 bg-white text-slate-700"
-          } disabled:cursor-not-allowed disabled:opacity-50`}
+              ? "bg-white text-brand-700 shadow-sm"
+              : "text-slate-600 hover:text-slate-900"
+          )}
         >
-          通常モード
+          通常
         </button>
         <button
           type="button"
           disabled={loading}
           onClick={() => onChange("batch")}
-          className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
-            mode === "batch"
-              ? "border-brand-500 bg-brand-50 text-brand-700"
-              : "border-slate-300 bg-white text-slate-700"
-          } disabled:cursor-not-allowed disabled:opacity-50`}
+          className={cn(
+            "min-h-10 flex-1 rounded-lg px-4 py-2 text-xs font-semibold transition sm:min-w-[7.5rem] disabled:cursor-not-allowed disabled:opacity-50",
+            mode === "batch" ? "bg-white text-brand-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
+          )}
         >
-          Batchモード
+          Batch
         </button>
       </div>
     </section>

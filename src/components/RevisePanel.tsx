@@ -444,8 +444,8 @@ export function RevisePanel({
   };
 
   return (
-    <section className="rounded-2xl bg-white p-6 shadow-panel">
-      <h2 className="text-xl font-bold text-slate-900">STEP5 修正再生成</h2>
+    <section className="app-panel p-6">
+      <h2 className="text-xl font-bold tracking-tight text-slate-900">STEP5 修正再生成</h2>
       <p className="mt-2 text-sm text-slate-600">
         テキスト指示に加えて、画像上のポイント/範囲指定で複数箇所をまとめて編集できます。
       </p>
@@ -632,7 +632,7 @@ export function RevisePanel({
       </div>
 
       <textarea
-        className="mt-4 h-24 w-full rounded-xl border border-slate-200 p-3 text-sm"
+        className="app-textarea mt-4 h-24 resize-y"
         placeholder="例: 2コマ目のセリフを短く、4コマ目をやさしいオチに変更"
         value={instruction}
         onChange={(event) => setInstruction(event.target.value)}
@@ -703,7 +703,7 @@ export function RevisePanel({
           type="button"
           onClick={onBack}
           disabled={loading || preparingMasks}
-          className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"
+          className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 disabled:opacity-50"
         >
           STEP4へ戻る
         </button>
@@ -713,7 +713,7 @@ export function RevisePanel({
           onClick={() => {
             void handleSubmit();
           }}
-          className="flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+          className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 py-2 text-sm font-semibold text-white shadow-md shadow-brand-500/15 transition disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
         >
           {preparingMasks ? (
             <>
@@ -734,7 +734,7 @@ export function RevisePanel({
             type="button"
             onClick={onAdoptRevised}
             disabled={loading || preparingMasks}
-            className="rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            className="min-h-11 rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white shadow-md shadow-slate-900/25 transition disabled:opacity-50"
           >
             修正版を採用してSTEP4へ
           </button>

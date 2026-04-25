@@ -6,14 +6,45 @@
   color-scheme: light;
 }
 
+@layer base {
+  body {
+    @apply font-sans antialiased;
+  }
+}
+
+@layer components {
+  .app-panel {
+    @apply rounded-2xl border border-slate-200/80 bg-white/95 shadow-panel backdrop-blur-sm;
+  }
+
+  .app-field {
+    @apply rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition
+      placeholder:text-slate-400
+      focus:border-brand-500 focus:ring-2 focus:ring-brand-200/80;
+  }
+
+  .app-textarea {
+    @apply w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition
+      placeholder:text-slate-400
+      focus:border-brand-500 focus:ring-2 focus:ring-brand-200/80;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
 body {
   margin: 0;
   min-height: 100vh;
   color: #0f172a;
   background:
-    radial-gradient(circle at 0% 0%, #effbff 0%, transparent 38%),
-    radial-gradient(circle at 100% 0%, #fef7e6 0%, transparent 34%),
-    linear-gradient(180deg, #f8fafc 0%, #eef4fb 100%);
+    radial-gradient(ellipse 120% 80% at 0% -20%, #dbeafe 0%, transparent 45%),
+    radial-gradient(ellipse 100% 60% at 100% 0%, #ffedd5 0%, transparent 42%),
+    linear-gradient(165deg, #f8fafc 0%, #e8f0f9 48%, #f1f5f9 100%);
+  background-attachment: fixed;
 }
 
 * {

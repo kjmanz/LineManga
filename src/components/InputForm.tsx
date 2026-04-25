@@ -26,21 +26,21 @@ export function InputForm({
   const hasReferences = Boolean(ownerReferenceDataUrl && wifeReferenceDataUrl);
 
   return (
-    <section className="rounded-2xl bg-white p-6 shadow-panel">
-      <h2 className="text-xl font-bold text-slate-900">STEP1 投稿文入力</h2>
+    <section className="app-panel p-6">
+      <h2 className="text-xl font-bold tracking-tight text-slate-900">STEP1 投稿文入力</h2>
       <p className="mt-2 text-sm text-slate-600">
         LINE投稿文を貼り付けて「要点を抽出する」を押してください。店主/妻の参照画像は固定で自動適用されます。
       </p>
 
       <textarea
-        className="mt-4 h-56 w-full rounded-xl border border-slate-200 p-4 text-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-200"
+        className="app-textarea mt-4 h-56 resize-y"
         placeholder="例: エアコンの効きが悪いとき、設定温度より先にフィルター掃除を..."
         value={postText}
         onChange={(event) => onPostTextChange(event.target.value)}
       />
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 p-4 text-sm">
+        <div className="rounded-xl border border-slate-200/90 bg-slate-50/40 p-4 text-sm">
           <div className="font-semibold text-slate-800">店主参照画像（固定）</div>
           {referenceLoading ? (
             <div className="mt-3 flex h-24 items-center justify-center rounded-lg bg-slate-100">
@@ -51,7 +51,7 @@ export function InputForm({
           )}
         </div>
 
-        <div className="rounded-xl border border-slate-200 p-4 text-sm">
+        <div className="rounded-xl border border-slate-200/90 bg-slate-50/40 p-4 text-sm">
           <div className="font-semibold text-slate-800">妻参照画像（固定）</div>
           {referenceLoading ? (
             <div className="mt-3 flex h-24 items-center justify-center rounded-lg bg-slate-100">
@@ -73,7 +73,7 @@ export function InputForm({
         type="button"
         onClick={onSubmit}
         disabled={loading || referenceLoading || !hasReferences}
-        className="mt-5 flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+        className="mt-5 flex min-h-12 items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 py-3 text-sm font-semibold text-white shadow-md shadow-brand-500/15 transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
       >
         {loading ? (
           <>
