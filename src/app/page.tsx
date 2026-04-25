@@ -486,32 +486,22 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen px-4 py-6 pb-10 md:px-8">
-      <div className="mx-auto max-w-6xl">
-        <header className="app-panel flex flex-col gap-5 p-5 sm:p-6 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
-          <div className="flex gap-4 sm:items-start">
-            <div
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 via-brand-600 to-brand-800 text-sm font-black text-white shadow-lg shadow-brand-500/20 sm:h-14 sm:w-14 sm:text-base"
-              aria-hidden
-            >
-              LM
-            </div>
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-brand-600/90 sm:text-xs">
-                LINE Manga Studio
-              </p>
-              <h1 className="text-balance text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
-                LINE投稿 漫画化エージェント
-              </h1>
-              <p className="text-pretty mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
-                投稿文から「4コマ (1080×1080)」と「A4 縦1ページ (2480×3508)」を同時に生成し、必要なら指示とマスクで微調整します。
-              </p>
-            </div>
+    <main className="min-h-screen px-4 py-8 pb-12 md:px-8">
+      <div className="mx-auto max-w-5xl">
+        <header className="app-panel flex flex-col gap-6 p-6 sm:p-8 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 flex-1 border-l-[3px] border-zinc-900 pl-5">
+            <p className="text-xs font-medium uppercase tracking-widest text-zinc-500">LINE Manga Studio</p>
+            <h1 className="text-balance mt-1 text-2xl font-semibold tracking-tight text-zinc-900 sm:text-3xl">
+              LINE投稿 漫画化エージェント
+            </h1>
+            <p className="text-pretty mt-3 max-w-2xl text-sm leading-relaxed text-zinc-600">
+              投稿文から「4コマ (1080×1080)」と「A4 縦1ページ (2480×3508)」を同時に生成し、必要なら指示とマスクで微調整します。
+            </p>
           </div>
           <button
             type="button"
             onClick={() => setShowResetDialog(true)}
-            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 self-start rounded-xl border border-slate-200 bg-white/90 px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="app-btn-ghost min-h-10 shrink-0 self-start px-4 py-2 text-sm disabled:cursor-not-allowed"
             disabled={step === 1 && !postText}
           >
             <svg
@@ -545,7 +535,7 @@ export default function Home() {
 
         <div className="mt-4 space-y-3">
           {error ? (
-            <p className="flex gap-3 rounded-xl border border-rose-200/90 bg-rose-50/95 px-4 py-3 text-sm text-rose-800 shadow-sm">
+            <p className="flex gap-3 rounded-lg border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-900">
               <span className="mt-0.5 shrink-0 text-rose-500" aria-hidden>
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
                   <path
@@ -559,8 +549,8 @@ export default function Home() {
             </p>
           ) : null}
           {!isApiBaseConfigured ? (
-            <p className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 rounded-xl border border-amber-200/90 bg-amber-50/95 px-4 py-3 text-sm text-amber-900 shadow-sm">
-              <code className="rounded-md bg-amber-100/90 px-1.5 py-0.5 font-mono text-[0.85em] text-amber-950">
+            <p className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
+              <code className="rounded bg-zinc-200/80 px-1.5 py-0.5 font-mono text-[0.85em] text-zinc-800">
                 NEXT_PUBLIC_API_BASE_URL
               </code>
               <span>が未設定です。Cloudflare Worker の URL を設定してください。</span>
@@ -606,8 +596,8 @@ export default function Home() {
 
           {(step === 4 || step === 5) && generatedPatternIds.length > 1 ? (
             <section className="app-panel p-4 sm:p-5">
-              <h3 className="text-sm font-semibold text-slate-800">生成済み構成案</h3>
-              <p className="mt-1 text-xs text-slate-600">表示・修正する構成案を選択できます。</p>
+              <h3 className="text-sm font-medium text-zinc-900">生成済み構成案</h3>
+              <p className="mt-1 text-xs text-zinc-600">表示・修正する構成案を選択できます。</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {patterns
                   .filter((pattern) => generationByPatternId[pattern.id])
@@ -618,10 +608,10 @@ export default function Home() {
                         key={pattern.id}
                         type="button"
                         onClick={() => selectGeneratedPattern(pattern.id)}
-                        className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+                        className={`rounded-md border px-3 py-1.5 text-xs font-medium transition ${
                           selected
-                            ? "border-brand-500 bg-brand-50 text-brand-700 shadow-sm"
-                            : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                            ? "border-zinc-900 bg-zinc-100 text-zinc-900"
+                            : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50"
                         }`}
                       >
                         {pattern.patternType} / {pattern.title}

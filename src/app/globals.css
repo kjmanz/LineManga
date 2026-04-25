@@ -4,29 +4,43 @@
 
 :root {
   color-scheme: light;
+  /* フラット背景・読みやすい階層用 */
+  --app-bg: #f4f4f5;
 }
 
 @layer base {
   body {
-    @apply font-sans antialiased;
+    @apply font-sans antialiased text-zinc-900;
   }
 }
 
 @layer components {
   .app-panel {
-    @apply rounded-2xl border border-slate-200/80 bg-white/95 shadow-panel backdrop-blur-sm;
+    @apply rounded-xl border border-zinc-200/90 bg-white shadow-sm;
   }
 
   .app-field {
-    @apply rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition
-      placeholder:text-slate-400
-      focus:border-brand-500 focus:ring-2 focus:ring-brand-200/80;
+    @apply rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition
+      placeholder:text-zinc-400
+      focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/10;
   }
 
   .app-textarea {
-    @apply w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition
-      placeholder:text-slate-400
-      focus:border-brand-500 focus:ring-2 focus:ring-brand-200/80;
+    @apply w-full rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition
+      placeholder:text-zinc-400
+      focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/10;
+  }
+
+  .app-btn-primary {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm
+      transition hover:bg-zinc-800
+      disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-500 disabled:shadow-none;
+  }
+
+  .app-btn-ghost {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-800 shadow-sm
+      transition hover:border-zinc-300 hover:bg-zinc-50
+      disabled:cursor-not-allowed disabled:opacity-50;
   }
 }
 
@@ -39,12 +53,8 @@
 body {
   margin: 0;
   min-height: 100vh;
-  color: #0f172a;
-  background:
-    radial-gradient(ellipse 120% 80% at 0% -20%, #dbeafe 0%, transparent 45%),
-    radial-gradient(ellipse 100% 60% at 100% 0%, #ffedd5 0%, transparent 42%),
-    linear-gradient(165deg, #f8fafc 0%, #e8f0f9 48%, #f1f5f9 100%);
-  background-attachment: fixed;
+  color: #18181b;
+  background: var(--app-bg);
 }
 
 * {

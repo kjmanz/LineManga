@@ -22,7 +22,7 @@ const config: Config = {
         }
       },
       boxShadow: {
-        panel: "0 14px 30px rgba(15, 23, 42, 0.08)"
+        panel: "0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04)"
       }
     }
   },

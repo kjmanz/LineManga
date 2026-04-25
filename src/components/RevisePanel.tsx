@@ -360,15 +360,15 @@ export function RevisePanel({
     const draftHeight = draftOnThisImage ? Math.abs(draftOnThisImage.startY - draftOnThisImage.currentY) : 0;
 
     return (
-      <article className="rounded-xl border border-slate-200 p-3">
-        <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
-        <p className="mt-1 text-xs text-slate-500">
+      <article className="rounded-lg border border-zinc-200 p-3">
+        <h3 className="text-sm font-medium text-zinc-900">{title}</h3>
+        <p className="mt-1 text-xs text-zinc-500">
           {toolShape === "point"
             ? "画像をクリックして編集ポイントを追加"
             : "画像上でドラッグして編集範囲を追加"}
         </p>
         <div
-          className="relative mt-2 overflow-hidden rounded-lg border bg-slate-50"
+          className="relative mt-2 overflow-hidden rounded-lg border bg-zinc-50"
           onClick={handleImageClick(layout)}
           onPointerDown={handlePointerDown(layout)}
           onPointerMove={handlePointerMove(layout)}
@@ -444,22 +444,22 @@ export function RevisePanel({
   };
 
   return (
-    <section className="app-panel p-6">
-      <h2 className="text-xl font-bold tracking-tight text-slate-900">STEP5 修正再生成</h2>
-      <p className="mt-2 text-sm text-slate-600">
+    <section className="app-panel p-6 sm:p-8">
+      <h2 className="text-lg font-semibold tracking-tight text-zinc-900 sm:text-xl">STEP5 修正再生成</h2>
+      <p className="mt-2 text-sm leading-relaxed text-zinc-600">
         テキスト指示に加えて、画像上のポイント/範囲指定で複数箇所をまとめて編集できます。
       </p>
 
-      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-        <p className="text-xs font-semibold text-slate-700">編集モード</p>
+      <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50/80 p-3">
+        <p className="text-xs font-medium text-zinc-800">編集モード</p>
         <div className="mt-2 flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => setEditMode("global_rewrite")}
             className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
               editMode === "global_rewrite"
-                ? "border-brand-500 bg-brand-50 text-brand-700"
-                : "border-slate-300 bg-white text-slate-700"
+                ? "border-zinc-900 bg-zinc-100 text-zinc-900"
+                : "border-zinc-200 bg-white text-zinc-700"
             }`}
           >
             通常再生成
@@ -469,16 +469,16 @@ export function RevisePanel({
             onClick={() => setEditMode("masked_inpaint")}
             className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
               editMode === "masked_inpaint"
-                ? "border-brand-500 bg-brand-50 text-brand-700"
-                : "border-slate-300 bg-white text-slate-700"
+                ? "border-zinc-900 bg-zinc-100 text-zinc-900"
+                : "border-zinc-200 bg-white text-zinc-700"
             }`}
           >
             高精度部分編集（マスク）
           </button>
         </div>
         {editMode === "masked_inpaint" ? (
-          <div className="mt-3 grid gap-3 rounded-lg border border-slate-200 bg-white p-3 md:grid-cols-2">
-            <label className="inline-flex items-center gap-2 text-xs text-slate-700">
+          <div className="mt-3 grid gap-3 rounded-lg border border-zinc-200 bg-white p-3 md:grid-cols-2">
+            <label className="inline-flex items-center gap-2 text-xs text-zinc-700">
               <input
                 type="checkbox"
                 checked={preserveOutsideMask}
@@ -486,7 +486,7 @@ export function RevisePanel({
               />
               マスク外を極力維持する
             </label>
-            <label className="text-xs text-slate-700">
+            <label className="text-xs text-zinc-700">
               境界ぼかし: {maskFeatherPx}px
               <input
                 type="range"
@@ -502,17 +502,17 @@ export function RevisePanel({
         ) : null}
       </div>
 
-      <div className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-2">
+      <div className="mt-4 grid gap-3 rounded-lg border border-zinc-200 bg-zinc-50/80 p-3 md:grid-cols-2">
         <div>
-          <p className="text-xs font-semibold text-slate-700">編集ツール</p>
+          <p className="text-xs font-semibold text-zinc-700">編集ツール</p>
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => setToolShape("point")}
               className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
                 toolShape === "point"
-                  ? "border-brand-500 bg-brand-50 text-brand-700"
-                  : "border-slate-300 bg-white text-slate-700"
+                  ? "border-zinc-900 bg-zinc-100 text-zinc-900"
+                  : "border-zinc-200 bg-white text-zinc-700"
               }`}
             >
               ポイント指定
@@ -522,8 +522,8 @@ export function RevisePanel({
               onClick={() => setToolShape("rect")}
               className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
                 toolShape === "rect"
-                  ? "border-brand-500 bg-brand-50 text-brand-700"
-                  : "border-slate-300 bg-white text-slate-700"
+                  ? "border-zinc-900 bg-zinc-100 text-zinc-900"
+                  : "border-zinc-200 bg-white text-zinc-700"
               }`}
             >
               範囲指定
@@ -531,7 +531,7 @@ export function RevisePanel({
           </div>
         </div>
         <div>
-          <p className="text-xs font-semibold text-slate-700">編集種別</p>
+          <p className="text-xs font-semibold text-zinc-700">編集種別</p>
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               type="button"
@@ -539,7 +539,7 @@ export function RevisePanel({
               className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
                 toolKind === "general"
                   ? "border-sky-500 bg-sky-50 text-sky-700"
-                  : "border-slate-300 bg-white text-slate-700"
+                  : "border-zinc-300 bg-white text-zinc-700"
               }`}
             >
               通常修正
@@ -550,7 +550,7 @@ export function RevisePanel({
               className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
                 toolKind === "owner_face"
                   ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-                  : "border-slate-300 bg-white text-slate-700"
+                  : "border-zinc-300 bg-white text-zinc-700"
               }`}
             >
               店主顔再生成
@@ -561,7 +561,7 @@ export function RevisePanel({
               className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
                 toolKind === "wife_face"
                   ? "border-fuchsia-500 bg-fuchsia-50 text-fuchsia-700"
-                  : "border-slate-300 bg-white text-slate-700"
+                  : "border-zinc-300 bg-white text-zinc-700"
               }`}
             >
               妻顔再生成
@@ -583,28 +583,28 @@ export function RevisePanel({
         })}
       </div>
 
-      <div className="mt-4 rounded-xl border border-slate-200 p-3">
+      <div className="mt-4 rounded-lg border border-zinc-200 p-3">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold text-slate-800">編集ポイント一覧 ({imageEdits.length})</h3>
+          <h3 className="text-sm font-medium text-zinc-900">編集ポイント一覧 ({imageEdits.length})</h3>
           <button
             type="button"
             onClick={() => setImageEdits([])}
             disabled={loading || preparingMasks || imageEdits.length === 0}
-            className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 disabled:opacity-50"
+            className="rounded-lg border border-zinc-300 px-3 py-1 text-xs font-semibold text-zinc-700 disabled:opacity-50"
           >
             全削除
           </button>
         </div>
         {imageEdits.length === 0 ? (
-          <p className="mt-2 text-xs text-slate-500">
+          <p className="mt-2 text-xs text-zinc-500">
             まだ編集ポイントがありません。画像をクリックまたはドラッグして追加してください。
           </p>
         ) : (
           <div className="mt-3 space-y-3">
             {imageEdits.map((edit, index) => (
-              <div key={edit.id} className="rounded-lg border border-slate-200 p-3">
+              <div key={edit.id} className="rounded-lg border border-zinc-200 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-slate-700">
+                  <p className="text-xs font-semibold text-zinc-700">
                     #{index + 1} / {layoutLabel[edit.layout]} / {kindLabel[edit.kind]} /{" "}
                     {edit.shape === "point"
                       ? `点(${toPercent(edit.x)}, ${toPercent(edit.y)})`
@@ -620,7 +620,7 @@ export function RevisePanel({
                   </button>
                 </div>
                 <textarea
-                  className="mt-2 h-20 w-full rounded-lg border border-slate-200 p-2 text-xs"
+                  className="mt-2 h-20 w-full rounded-lg border border-zinc-200 p-2 text-xs"
                   placeholder="この箇所をどう編集したいかを入力"
                   value={edit.comment}
                   onChange={(event) => updateEditComment(edit.id, event.target.value)}
@@ -637,7 +637,7 @@ export function RevisePanel({
         value={instruction}
         onChange={(event) => setInstruction(event.target.value)}
       />
-      <p className="mt-2 text-xs text-slate-500">
+      <p className="mt-2 text-xs text-zinc-500">
         補足の全体指示を入力できます。画像編集ポイントのみでも再生成可能です。
       </p>
       {hasEmptyEditComment ? (
@@ -657,7 +657,7 @@ export function RevisePanel({
       ) : null}
 
       <div className="mt-3">
-        <p className="text-xs font-semibold text-slate-700">修正対象</p>
+        <p className="text-xs font-semibold text-zinc-700">修正対象</p>
         <div className="mt-2 flex flex-wrap gap-2">
           <button
             type="button"
@@ -665,8 +665,8 @@ export function RevisePanel({
             onClick={() => setTarget("both")}
             className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
               target === "both"
-                ? "border-brand-500 bg-brand-50 text-brand-700"
-                : "border-slate-300 bg-white text-slate-700"
+                ? "border-zinc-900 bg-zinc-100 text-zinc-900"
+                : "border-zinc-200 bg-white text-zinc-700"
             } disabled:cursor-not-allowed disabled:opacity-50`}
           >
             4コマ + A4
@@ -677,8 +677,8 @@ export function RevisePanel({
             onClick={() => setTarget("four-panel-square")}
             className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
               target === "four-panel-square"
-                ? "border-brand-500 bg-brand-50 text-brand-700"
-                : "border-slate-300 bg-white text-slate-700"
+                ? "border-zinc-900 bg-zinc-100 text-zinc-900"
+                : "border-zinc-200 bg-white text-zinc-700"
             } disabled:cursor-not-allowed disabled:opacity-50`}
           >
             4コマのみ
@@ -689,8 +689,8 @@ export function RevisePanel({
             onClick={() => setTarget("a4-vertical")}
             className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
               target === "a4-vertical"
-                ? "border-brand-500 bg-brand-50 text-brand-700"
-                : "border-slate-300 bg-white text-slate-700"
+                ? "border-zinc-900 bg-zinc-100 text-zinc-900"
+                : "border-zinc-200 bg-white text-zinc-700"
             } disabled:cursor-not-allowed disabled:opacity-50`}
           >
             A4のみ
@@ -703,7 +703,7 @@ export function RevisePanel({
           type="button"
           onClick={onBack}
           disabled={loading || preparingMasks}
-          className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 disabled:opacity-50"
+          className="app-btn-ghost min-h-10"
         >
           STEP4へ戻る
         </button>
@@ -713,7 +713,7 @@ export function RevisePanel({
           onClick={() => {
             void handleSubmit();
           }}
-          className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 py-2 text-sm font-semibold text-white shadow-md shadow-brand-500/15 transition disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+          className="app-btn-primary min-h-10"
         >
           {preparingMasks ? (
             <>
@@ -734,7 +734,7 @@ export function RevisePanel({
             type="button"
             onClick={onAdoptRevised}
             disabled={loading || preparingMasks}
-            className="min-h-11 rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white shadow-md shadow-slate-900/25 transition disabled:opacity-50"
+            className="app-btn-primary min-h-10 disabled:opacity-50"
           >
             修正版を採用してSTEP4へ
           </button>
@@ -742,31 +742,31 @@ export function RevisePanel({
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <article className="rounded-xl border border-slate-200 p-3">
-          <h3 className="text-sm font-semibold text-slate-800">前回 4コマ</h3>
+        <article className="rounded-lg border border-zinc-200 p-3">
+          <h3 className="text-sm font-medium text-zinc-900">前回 4コマ</h3>
           <img src={previousResult.fourPanelImageDataUrl} alt="前回4コマ" className="mt-2 rounded-lg border" />
         </article>
-        <article className="rounded-xl border border-slate-200 p-3">
-          <h3 className="text-sm font-semibold text-slate-800">修正版 4コマ</h3>
+        <article className="rounded-lg border border-zinc-200 p-3">
+          <h3 className="text-sm font-medium text-zinc-900">修正版 4コマ</h3>
           {revisedResult ? (
             <img src={revisedResult.fourPanelImageDataUrl} alt="修正版4コマ" className="mt-2 rounded-lg border" />
           ) : (
-            <p className="mt-2 text-xs text-slate-500">まだ再生成していません。</p>
+            <p className="mt-2 text-xs text-zinc-500">まだ再生成していません。</p>
           )}
         </article>
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <article className="rounded-xl border border-slate-200 p-3">
-          <h3 className="text-sm font-semibold text-slate-800">前回 A4</h3>
+        <article className="rounded-lg border border-zinc-200 p-3">
+          <h3 className="text-sm font-medium text-zinc-900">前回 A4</h3>
           <img src={previousResult.a4ImageDataUrl} alt="前回A4" className="mt-2 rounded-lg border" />
         </article>
-        <article className="rounded-xl border border-slate-200 p-3">
-          <h3 className="text-sm font-semibold text-slate-800">修正版 A4</h3>
+        <article className="rounded-lg border border-zinc-200 p-3">
+          <h3 className="text-sm font-medium text-zinc-900">修正版 A4</h3>
           {revisedResult ? (
             <img src={revisedResult.a4ImageDataUrl} alt="修正版A4" className="mt-2 rounded-lg border" />
           ) : (
-            <p className="mt-2 text-xs text-slate-500">まだ再生成していません。</p>
+            <p className="mt-2 text-xs text-zinc-500">まだ再生成していません。</p>
           )}
         </article>
       </div>

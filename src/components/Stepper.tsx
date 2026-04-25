@@ -13,7 +13,7 @@ type Props = {
 
 export function Stepper({ current, items }: Props) {
   return (
-    <nav className="app-stepper app-panel mt-4 p-4 sm:p-5" aria-label="作業手順">
+    <nav className="app-panel mt-6 p-4 sm:mt-8 sm:p-5" aria-label="作業手順">
       <ol className="m-0 flex w-full list-none items-start justify-center gap-0 p-0 sm:items-center">
         {items.map((item, index) => {
           const n = index + 1;
@@ -26,11 +26,10 @@ export function Stepper({ current, items }: Props) {
               <li className="flex min-w-0 flex-1 list-none flex-col items-center text-center sm:min-w-0">
                 <span
                   className={cn(
-                    "flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold tabular-nums shadow-sm transition",
-                    isCurrent &&
-                      "bg-brand-500 text-white ring-2 ring-brand-200/80 ring-offset-2 ring-offset-white",
-                    isDone && !isCurrent && "bg-emerald-500 text-white",
-                    !isCurrent && !isDone && "border border-slate-200/90 bg-slate-50 text-slate-500"
+                    "flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums transition sm:h-9 sm:w-9 sm:text-xs",
+                    isCurrent && "bg-zinc-900 text-white ring-2 ring-zinc-900/15 ring-offset-2 ring-offset-white",
+                    isDone && !isCurrent && "bg-zinc-500 text-white",
+                    !isCurrent && !isDone && "border border-zinc-200 bg-zinc-100 text-zinc-500"
                   )}
                   title={item.label}
                   aria-current={isCurrent ? "step" : undefined}
@@ -40,7 +39,7 @@ export function Stepper({ current, items }: Props) {
                       xmlns="http://www.w3.org/2000/svg"
                       viewBox="0 0 20 20"
                       fill="currentColor"
-                      className="h-4 w-4"
+                      className="h-3.5 w-3.5 sm:h-4 sm:w-4"
                       aria-hidden
                     >
                       <path
@@ -55,10 +54,10 @@ export function Stepper({ current, items }: Props) {
                 </span>
                 <span
                   className={cn(
-                    "mt-2 line-clamp-2 w-full max-w-[4.2rem] px-0.5 text-[10px] font-medium leading-tight sm:max-w-[6.5rem] sm:text-xs",
-                    isCurrent && "text-brand-800",
-                    isDone && !isCurrent && "text-emerald-800",
-                    !isCurrent && !isDone && "text-slate-500"
+                    "mt-2 line-clamp-2 w-full max-w-[4.2rem] px-0.5 text-[10px] font-medium leading-tight sm:max-w-[6.5rem] sm:text-[11px]",
+                    isCurrent && "text-zinc-900",
+                    isDone && !isCurrent && "text-zinc-600",
+                    !isCurrent && !isDone && "text-zinc-400"
                   )}
                 >
                   {item.short}
@@ -66,13 +65,13 @@ export function Stepper({ current, items }: Props) {
               </li>
               {!isLast ? (
                 <li
-                  className="mt-[18px] flex h-0.5 w-2 list-none self-center sm:mt-5 sm:min-w-[0.4rem] sm:flex-1"
+                  className="mt-[16px] flex h-0.5 w-2 list-none self-center sm:mt-[18px] sm:min-w-[0.4rem] sm:flex-1"
                   aria-hidden
                 >
                   <span
                     className={cn(
                       "h-full w-full min-w-2 rounded-full transition-colors",
-                      current > n ? "bg-emerald-300" : "bg-slate-200"
+                      current > n ? "bg-zinc-400" : "bg-zinc-200"
                     )}
                   />
                 </li>

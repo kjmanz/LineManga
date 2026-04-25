@@ -2,6 +2,7 @@
 
 import { Spinner } from "./Spinner";
 import type { CompositionPattern } from "@/lib/types";
+import { cn } from "@/lib/cn";
 
 type Props = {
   patterns: CompositionPattern[];
@@ -23,13 +24,13 @@ export function PatternCards({
   onGenerateAll
 }: Props) {
   return (
-    <section className="app-panel p-6">
-      <h2 className="text-xl font-bold tracking-tight text-slate-900">STEP3 構成案選択</h2>
-        <p className="mt-2 text-sm text-slate-600">
+    <section className="app-panel p-6 sm:p-8">
+      <h2 className="text-lg font-semibold tracking-tight text-zinc-900 sm:text-xl">STEP3 構成案選択</h2>
+      <p className="mt-2 text-sm leading-relaxed text-zinc-600">
         3パターンから1つを選んで生成するか、全構成案を一括で生成できます。
       </p>
 
-      <div className="mt-5 grid gap-4 md:grid-cols-3">
+      <div className="mt-5 grid gap-3 md:grid-cols-3">
         {patterns.map((pattern) => {
           const selected = pattern.id === selectedPatternId;
           return (
@@ -37,22 +38,23 @@ export function PatternCards({
               key={pattern.id}
               type="button"
               onClick={() => onSelect(pattern.id)}
-              className={`rounded-xl border p-4 text-left transition ${
+              className={cn(
+                "rounded-lg border p-4 text-left transition",
                 selected
-                  ? "border-brand-500 bg-brand-50/90 shadow-md shadow-slate-900/5 ring-2 ring-brand-100/80"
-                  : "border-slate-200/90 bg-white hover:border-brand-200 hover:shadow-sm"
-              }`}
+                  ? "border-zinc-900 bg-zinc-50 ring-1 ring-zinc-900/10"
+                  : "border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50/80"
+              )}
             >
-              <p className="text-xs font-semibold text-brand-700">{pattern.patternType}</p>
-              <h3 className="mt-1 text-base font-bold text-slate-900">{pattern.title}</h3>
-              <ul className="mt-3 space-y-2 text-xs text-slate-700">
+              <p className="text-xs font-medium text-zinc-500">{pattern.patternType}</p>
+              <h3 className="mt-1 text-base font-semibold text-zinc-900">{pattern.title}</h3>
+              <ul className="mt-3 space-y-1.5 text-xs leading-relaxed text-zinc-600">
                 {pattern.fourPanels.map((panel) => (
                   <li key={`${pattern.id}-${panel.panel}`}>
-                    <span className="font-semibold">コマ{panel.panel}:</span> {panel.dialogue}
+                    <span className="font-medium text-zinc-700">コマ{panel.panel}:</span> {panel.dialogue}
                   </li>
                 ))}
               </ul>
-              <p className="mt-3 rounded-lg border border-slate-100 bg-slate-50/80 p-2 text-xs text-slate-700">
+              <p className="mt-3 rounded-md border border-zinc-200 bg-zinc-50/80 p-2 text-xs text-zinc-600">
                 {pattern.cta ? `CTA: ${pattern.cta}` : "CTAなし"}
               </p>
             </button>
@@ -65,7 +67,7 @@ export function PatternCards({
           type="button"
           onClick={onBack}
           disabled={loading}
-          className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 disabled:opacity-50"
+          className="app-btn-ghost min-h-10 disabled:cursor-not-allowed"
         >
           STEP2へ戻る
         </button>
@@ -73,7 +75,7 @@ export function PatternCards({
           type="button"
           onClick={onGenerate}
           disabled={loading || !selectedPatternId}
-          className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 py-2 text-sm font-semibold text-white shadow-md shadow-brand-500/15 transition disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+          className="app-btn-primary min-h-10"
         >
           {loading ? (
             <>
@@ -88,11 +90,11 @@ export function PatternCards({
           type="button"
           onClick={onGenerateAll}
           disabled={loading || patterns.length === 0}
-          className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white shadow-md shadow-slate-900/20 transition disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border-2 border-zinc-900 bg-white px-5 py-2.5 text-sm font-medium text-zinc-900 transition hover:bg-zinc-900 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-100 disabled:text-zinc-400"
         >
           {loading ? (
             <>
-              <Spinner size="sm" className="text-white" />
+              <Spinner size="sm" className="text-zinc-900" />
               <span>一括生成中...</span>
             </>
           ) : (
