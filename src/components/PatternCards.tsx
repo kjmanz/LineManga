@@ -1,7 +1,7 @@
 "use client";
 
 import { Spinner } from "./Spinner";
-import type { CompositionPattern, GenerationMode } from "@/lib/types";
+import type { CompositionPattern } from "@/lib/types";
 
 type Props = {
   patterns: CompositionPattern[];
@@ -11,7 +11,6 @@ type Props = {
   onBack: () => void;
   onGenerate: () => void;
   onGenerateAll: () => void;
-  generationMode: GenerationMode;
 };
 
 export function PatternCards({
@@ -21,16 +20,13 @@ export function PatternCards({
   onSelect,
   onBack,
   onGenerate,
-  onGenerateAll,
-  generationMode
+  onGenerateAll
 }: Props) {
-  const isBatchMode = generationMode === "batch";
-
   return (
     <section className="app-panel p-6">
       <h2 className="text-xl font-bold tracking-tight text-slate-900">STEP3 構成案選択</h2>
-      <p className="mt-2 text-sm text-slate-600">
-        3パターンから1つを選んで生成します。全構成案の一括生成もモードに応じて実行できます。
+        <p className="mt-2 text-sm text-slate-600">
+        3パターンから1つを選んで生成するか、全構成案を一括で生成できます。
       </p>
 
       <div className="mt-5 grid gap-4 md:grid-cols-3">
@@ -82,10 +78,10 @@ export function PatternCards({
           {loading ? (
             <>
               <Spinner size="sm" className="text-white" />
-              <span>{isBatchMode ? "バッチ生成中..." : "通常生成中..."}</span>
+              <span>生成中...</span>
             </>
           ) : (
-            <span>{isBatchMode ? "選択中の構成案をバッチ生成" : "選択中の構成案を通常生成"}</span>
+            <span>選択中の構成案を生成</span>
           )}
         </button>
         <button
@@ -97,10 +93,10 @@ export function PatternCards({
           {loading ? (
             <>
               <Spinner size="sm" className="text-white" />
-              <span>{isBatchMode ? "バッチ生成中..." : "通常生成中..."}</span>
+              <span>一括生成中...</span>
             </>
           ) : (
-            <span>{isBatchMode ? "全構成案をBatch一括生成" : "全構成案を通常一括生成"}</span>
+            <span>全構成案を一括生成</span>
           )}
         </button>
       </div>
