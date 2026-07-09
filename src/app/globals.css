@@ -4,43 +4,58 @@
 
 :root {
   color-scheme: light;
-  /* フラット背景・読みやすい階層用 */
-  --app-bg: #f4f4f5;
+  --app-bg: #f1f5f9;
+  --app-ink: #0f172a;
+  --app-muted: #64748b;
+  --app-accent: #0f766e;
+  --app-accent-soft: #ccfbf1;
+  --app-panel: #ffffff;
+  --app-line: #e2e8f0;
 }
 
 @layer base {
   body {
-    @apply font-sans antialiased text-zinc-900;
+    @apply font-sans antialiased text-slate-900;
   }
 }
 
 @layer components {
   .app-panel {
-    @apply rounded-xl border border-zinc-200/90 bg-white shadow-sm;
+    @apply rounded-2xl border border-slate-200/90 bg-white shadow-panel;
   }
 
   .app-field {
-    @apply rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition
-      placeholder:text-zinc-400
-      focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/10;
+    @apply rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition
+      placeholder:text-slate-400
+      focus:border-teal-600/40 focus:ring-2 focus:ring-teal-700/15;
   }
 
   .app-textarea {
-    @apply w-full rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition
-      placeholder:text-zinc-400
-      focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/10;
+    @apply w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-relaxed text-slate-900 outline-none transition
+      placeholder:text-slate-400
+      focus:border-teal-600/40 focus:ring-2 focus:ring-teal-700/15;
   }
 
   .app-btn-primary {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm
-      transition hover:bg-zinc-800
-      disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-500 disabled:shadow-none;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm
+      transition hover:bg-slate-800
+      disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none;
   }
 
   .app-btn-ghost {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-800 shadow-sm
-      transition hover:border-zinc-300 hover:bg-zinc-50
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 shadow-sm
+      transition hover:border-slate-300 hover:bg-slate-50
       disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .app-btn-secondary {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border-2 border-slate-900 bg-white px-5 py-2.5 text-sm font-medium text-slate-900
+      transition hover:bg-slate-900 hover:text-white
+      disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400;
+  }
+
+  .app-sticky-actions {
+    @apply sticky bottom-0 z-20 -mx-6 mt-6 border-t border-slate-200 bg-white/95 px-6 py-4 backdrop-blur sm:-mx-8 sm:px-8;
   }
 }
 
@@ -53,8 +68,10 @@
 body {
   margin: 0;
   min-height: 100vh;
-  color: #18181b;
-  background: var(--app-bg);
+  color: var(--app-ink);
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(15, 118, 110, 0.08), transparent 55%),
+    linear-gradient(180deg, #f8fafc 0%, var(--app-bg) 40%, #eef2f7 100%);
 }
 
 * {

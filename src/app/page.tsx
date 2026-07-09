@@ -3,11 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { InputForm } from "@/components/InputForm";
+import { LoadingOverlay } from "@/components/LoadingOverlay";
 import { MangaPreview } from "@/components/MangaPreview";
 import { PatternCards } from "@/components/PatternCards";
 import { RevisePanel } from "@/components/RevisePanel";
 import { Stepper } from "@/components/Stepper";
 import { SummaryView } from "@/components/SummaryView";
+import { toUserFriendlyError } from "@/lib/errors";
 import {
   normalizeSummary,
   type CompositionPattern,
@@ -65,6 +67,29 @@ const WORKFLOW_STEPS = [
   { label: "4. 漫画プレビュー", short: "プレビュー" },
   { label: "5. 修正再生成", short: "修正" }
 ] as const;
+
+const LOADING_COPY: Record<number, { title: string; message: string }> = {
+  1: {
+    title: "要点を抽出しています",
+    message: "投稿文から漫画化に使えるポイントを整理しています。"
+  },
+  2: {
+    title: "構成案を作っています",
+    message: "共感型・驚き型・体験談型の3パターンを生成しています。"
+  },
+  3: {
+    title: "漫画を生成しています",
+    message: "4コマとA4縦を作成中です。混雑時は少し時間がかかることがあります。"
+  },
+  4: {
+    title: "処理中です",
+    message: "しばらくお待ちください。"
+  },
+  5: {
+    title: "修正版を再生成しています",
+    message: "指示とマスクを反映して画像を作り直しています。"
+  }
+};
 
 const INITIAL_SUMMARY: SummaryResult = normalizeSummary(null);
 const OWNER_REFERENCE_PATH = "references/owner.png";
@@ -192,6 +217,9 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [autosaveLoaded, setAutosaveLoaded] = useState(false);
+  const [loadingKind, setLoadingKind] = useState<"summarize" | "compose" | "generate" | "generate-all" | "revise" | null>(
+    null
+  );
   const isApiBaseConfigured = API_BASE_URL.length > 0;
 
   const selectedPattern = useMemo(
@@ -200,6 +228,55 @@ export default function Home() {
   );
 
   const generatedPatternIds = useMemo(() => Object.keys(generationByPatternId), [generationByPatternId]);
+
+  const maxReachableStep = useMemo(() => {
+    if (generation || Object.keys(generationByPatternId).length > 0) {
+      return 5;
+    }
+    if (patterns.length > 0) {
+      return 3;
+    }
+    if (summary.mainTheme.trim()) {
+      return 2;
+    }
+    return 1;
+  }, [generation, generationByPatternId, patterns.length, summary.mainTheme]);
+
+  const loadingCopy = useMemo(() => {
+    if (loadingKind === "generate-all") {
+      return {
+        title: "全構成案を一括生成しています",
+        message: "3パターン分の画像を順番に作成しています。完了までお待ちください。"
+      };
+    }
+    if (loadingKind === "revise") {
+      return LOADING_COPY[5];
+    }
+    if (loadingKind === "generate") {
+      return LOADING_COPY[3];
+    }
+    if (loadingKind === "compose") {
+      return LOADING_COPY[2];
+    }
+    if (loadingKind === "summarize") {
+      return LOADING_COPY[1];
+    }
+    return LOADING_COPY[step] ?? LOADING_COPY[4];
+  }, [loadingKind, step]);
+
+  const handleStepJump = (nextStep: number) => {
+    if (nextStep > maxReachableStep || nextStep === step) {
+      return;
+    }
+    if (nextStep === 4 && !generation) {
+      return;
+    }
+    if (nextStep === 5 && !generation) {
+      return;
+    }
+    setError(null);
+    setStep(nextStep);
+  };
 
   useEffect(() => {
     const saved = loadAutosaveState();
@@ -308,6 +385,7 @@ export default function Home() {
     try {
       setError(null);
       setLoading(true);
+      setLoadingKind("summarize");
       const data = await postJson<{ summary: SummaryResult }>("/api/summarize", {
         postText
       });
@@ -319,9 +397,10 @@ export default function Home() {
       setRevisedGeneration(null);
       setStep(2);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "要点抽出に失敗しました。");
+      setError(toUserFriendlyError(err, "要点抽出に失敗しました。"));
     } finally {
       setLoading(false);
+      setLoadingKind(null);
     }
   };
 
@@ -329,6 +408,7 @@ export default function Home() {
     try {
       setError(null);
       setLoading(true);
+      setLoadingKind("compose");
       const data = await postJson<{ patterns: CompositionPattern[] }>("/api/compose", {
         summary
       });
@@ -339,9 +419,10 @@ export default function Home() {
       setRevisedGeneration(null);
       setStep(3);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "構成案生成に失敗しました。");
+      setError(toUserFriendlyError(err, "構成案生成に失敗しました。"));
     } finally {
       setLoading(false);
+      setLoadingKind(null);
     }
   };
 
@@ -354,6 +435,7 @@ export default function Home() {
     try {
       setError(null);
       setLoading(true);
+      setLoadingKind("generate");
       const generated = await postJson<GenerationResult>("/api/generate", {
         summary,
         pattern: selectedPattern,
@@ -366,9 +448,10 @@ export default function Home() {
       setGeneratedImageCount((count) => count + 2);
       setStep(4);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "生成に失敗しました。");
+      setError(toUserFriendlyError(err, "生成に失敗しました。"));
     } finally {
       setLoading(false);
+      setLoadingKind(null);
     }
   };
 
@@ -381,6 +464,7 @@ export default function Home() {
     try {
       setError(null);
       setLoading(true);
+      setLoadingKind("generate-all");
       const map: PatternGenerationMap = {};
       let generatedCount = 0;
 
@@ -412,9 +496,10 @@ export default function Home() {
       setGeneratedImageCount((count) => count + generatedCount);
       setStep(4);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "全構成案生成に失敗しました。");
+      setError(toUserFriendlyError(err, "全構成案生成に失敗しました。"));
     } finally {
       setLoading(false);
+      setLoadingKind(null);
     }
   };
 
@@ -445,6 +530,7 @@ export default function Home() {
     try {
       setError(null);
       setLoading(true);
+      setLoadingKind("revise");
       const revised = await postJson<GenerationResult>("/api/revise", {
         summary,
         pattern: selectedPattern,
@@ -466,9 +552,10 @@ export default function Home() {
       setRevisedGeneration(revised);
       setGeneratedImageCount((count) => count + reviseTargets.length);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "再生成に失敗しました。");
+      setError(toUserFriendlyError(err, "再生成に失敗しました。"));
     } finally {
       setLoading(false);
+      setLoadingKind(null);
     }
   };
 
@@ -486,16 +573,18 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen px-4 py-8 pb-12 md:px-8">
+    <main className="min-h-screen px-4 py-6 pb-16 md:px-8 md:py-8">
       <div className="mx-auto max-w-5xl">
-        <header className="app-panel flex flex-col gap-6 p-6 sm:p-8 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0 flex-1 border-l-[3px] border-zinc-900 pl-5">
-            <p className="text-xs font-medium uppercase tracking-widest text-zinc-500">LINE Manga Studio</p>
-            <h1 className="text-balance mt-1 text-2xl font-semibold tracking-tight text-zinc-900 sm:text-3xl">
+        <header className="app-panel flex flex-col gap-5 p-5 sm:p-7 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1 text-[11px] font-semibold tracking-wide text-teal-800 ring-1 ring-teal-100">
+              LINE Manga Studio
+            </div>
+            <h1 className="text-balance mt-3 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
               LINE投稿 漫画化エージェント
             </h1>
-            <p className="text-pretty mt-3 max-w-2xl text-sm leading-relaxed text-zinc-600">
-              投稿文から「4コマ (1080×1080)」と「A4 縦1ページ (2480×3508)」を同時に生成し、必要なら指示とマスクで微調整します。
+            <p className="text-pretty mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
+              投稿文から4コマとA4縦漫画を作り、必要なら指示とマスクで微調整します。
             </p>
           </div>
           <button
@@ -531,11 +620,13 @@ export default function Home() {
         onCancel={() => setShowResetDialog(false)}
       />
 
-        <Stepper current={step} items={WORKFLOW_STEPS} />
+        <LoadingOverlay open={loading} title={loadingCopy.title} message={loadingCopy.message} />
+
+        <Stepper current={step} items={WORKFLOW_STEPS} onSelect={handleStepJump} maxReachable={maxReachableStep} />
 
         <div className="mt-4 space-y-3">
           {error ? (
-            <p className="flex gap-3 rounded-lg border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+            <div className="flex gap-3 rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-900">
               <span className="mt-0.5 shrink-0 text-rose-500" aria-hidden>
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
                   <path
@@ -545,12 +636,22 @@ export default function Home() {
                   />
                 </svg>
               </span>
-              <span className="min-w-0 leading-relaxed">{error}</span>
-            </p>
+              <div className="min-w-0 flex-1">
+                <p className="font-medium">うまくいきませんでした</p>
+                <p className="mt-1 leading-relaxed text-rose-800/90">{error}</p>
+                <button
+                  type="button"
+                  onClick={() => setError(null)}
+                  className="mt-2 text-xs font-medium text-rose-700 underline-offset-2 hover:underline"
+                >
+                  閉じる
+                </button>
+              </div>
+            </div>
           ) : null}
           {!isApiBaseConfigured ? (
-            <p className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
-              <code className="rounded bg-zinc-200/80 px-1.5 py-0.5 font-mono text-[0.85em] text-zinc-800">
+            <p className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              <code className="rounded bg-amber-100/80 px-1.5 py-0.5 font-mono text-[0.85em] text-amber-950">
                 NEXT_PUBLIC_API_BASE_URL
               </code>
               <span>が未設定です。Cloudflare Worker の URL を設定してください。</span>
@@ -558,7 +659,7 @@ export default function Home() {
           ) : null}
         </div>
 
-        <section className="mt-6 space-y-5">
+        <section className="mt-5 space-y-5">
           {step === 1 ? (
             <InputForm
               postText={postText}
@@ -596,8 +697,8 @@ export default function Home() {
 
           {(step === 4 || step === 5) && generatedPatternIds.length > 1 ? (
             <section className="app-panel p-4 sm:p-5">
-              <h3 className="text-sm font-medium text-zinc-900">生成済み構成案</h3>
-              <p className="mt-1 text-xs text-zinc-600">表示・修正する構成案を選択できます。</p>
+              <h3 className="text-sm font-medium text-slate-900">生成済み構成案</h3>
+              <p className="mt-1 text-xs text-slate-600">表示・修正する構成案を切り替えられます。</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {patterns
                   .filter((pattern) => generationByPatternId[pattern.id])
@@ -608,10 +709,10 @@ export default function Home() {
                         key={pattern.id}
                         type="button"
                         onClick={() => selectGeneratedPattern(pattern.id)}
-                        className={`rounded-md border px-3 py-1.5 text-xs font-medium transition ${
+                        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
                           selected
-                            ? "border-zinc-900 bg-zinc-100 text-zinc-900"
-                            : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50"
+                            ? "border-teal-700 bg-teal-50 text-teal-900"
+                            : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
                         }`}
                       >
                         {pattern.patternType} / {pattern.title}
