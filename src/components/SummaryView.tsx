@@ -36,15 +36,18 @@ const removeListItem = (list: string[], index: number, onApply: (next: string[])
 
 export function SummaryView({ summary, loading, onChange, onBack, onNext }: Props) {
   return (
-    <section className="app-panel p-6 sm:p-8">
-      <h2 className="text-lg font-semibold tracking-tight text-zinc-900 sm:text-xl">STEP2 要点確認</h2>
-      <p className="mt-2 text-sm leading-relaxed text-zinc-600">
-        AIが抽出した要点を必要に応じて編集し、3パターン構成案を生成してください。
-      </p>
+    <section className="app-panel overflow-hidden p-6 sm:p-8">
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wider text-teal-700">Step 2</p>
+        <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">要点を確認・編集</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
+          AIが抽出した要点です。必要なら直してから、構成案3パターンを作ります。
+        </p>
+      </div>
 
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
+      <div className="mt-5 grid gap-4 md:grid-cols-2">
         <label className="text-sm">
-          <span className="mb-1 block font-medium text-zinc-800">メインテーマ</span>
+          <span className="mb-1.5 block font-medium text-slate-800">メインテーマ</span>
           <input
             className="app-field w-full"
             value={summary.mainTheme}
@@ -52,7 +55,7 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
           />
         </label>
         <label className="text-sm">
-          <span className="mb-1 block font-medium text-zinc-800">想定読者</span>
+          <span className="mb-1.5 block font-medium text-slate-800">想定読者</span>
           <input
             className="app-field w-full"
             value={summary.targetPersona}
@@ -61,8 +64,8 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
         </label>
       </div>
 
-      <div className="mt-4">
-        <div className="mb-1 text-sm font-medium text-zinc-800">困りごと</div>
+      <div className="mt-5">
+        <div className="mb-1.5 text-sm font-medium text-slate-800">困りごと</div>
         <div className="space-y-2">
           {summary.painPoints.map((item, index) => (
             <div key={`pain-${index}`} className="flex gap-2">
@@ -82,7 +85,7 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
                     onChange({ ...summary, painPoints })
                   )
                 }
-                className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:border-zinc-300 hover:bg-zinc-50"
+                className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
               >
                 削除
               </button>
@@ -92,14 +95,14 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
         <button
           type="button"
           onClick={() => addListItem(summary.painPoints, (painPoints) => onChange({ ...summary, painPoints }))}
-          className="mt-2 rounded-md border border-dashed border-zinc-300 bg-zinc-50 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-100"
+          className="mt-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-100"
         >
-          困りごとを追加
+          ＋ 困りごとを追加
         </button>
       </div>
 
-      <div className="mt-4">
-        <div className="mb-1 text-sm font-medium text-zinc-800">事実・補足</div>
+      <div className="mt-5">
+        <div className="mb-1.5 text-sm font-medium text-slate-800">事実・補足</div>
         <div className="space-y-2">
           {summary.keyFacts.map((item, index) => (
             <div key={`fact-${index}`} className="flex gap-2">
@@ -117,7 +120,7 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
                 onClick={() =>
                   removeListItem(summary.keyFacts, index, (keyFacts) => onChange({ ...summary, keyFacts }))
                 }
-                className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:border-zinc-300 hover:bg-zinc-50"
+                className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
               >
                 削除
               </button>
@@ -127,23 +130,23 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
         <button
           type="button"
           onClick={() => addListItem(summary.keyFacts, (keyFacts) => onChange({ ...summary, keyFacts }))}
-          className="mt-2 rounded-md border border-dashed border-zinc-300 bg-zinc-50 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-100"
+          className="mt-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-100"
         >
-          事実を追加
+          ＋ 事実を追加
         </button>
       </div>
 
-      <label className="mt-4 block text-sm">
-        <span className="mb-1 block font-medium text-zinc-800">解決メッセージ</span>
+      <label className="mt-5 block text-sm">
+        <span className="mb-1.5 block font-medium text-slate-800">解決メッセージ</span>
         <textarea
-          className="app-textarea h-20 resize-y"
+          className="app-textarea h-24 resize-y"
           value={summary.solutionMessage}
           onChange={(event) => onChange({ ...summary, solutionMessage: event.target.value })}
         />
       </label>
 
-      <label className="mt-4 block text-sm">
-        <span className="mb-1 block font-medium text-zinc-800">口調メモ</span>
+      <label className="mt-5 block text-sm">
+        <span className="mb-1.5 block font-medium text-slate-800">口調メモ</span>
         <input
           className="app-field w-full"
           value={summary.toneNotes}
@@ -151,30 +154,22 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
         />
       </label>
 
-      <div className="mt-6 flex flex-wrap gap-3">
-        <button
-          type="button"
-          onClick={onBack}
-          disabled={loading}
-          className="app-btn-ghost min-h-10 disabled:cursor-not-allowed"
-        >
-          STEP1へ戻る
-        </button>
-        <button
-          type="button"
-          onClick={onNext}
-          disabled={loading}
-          className="app-btn-primary min-h-10"
-        >
-          {loading ? (
-            <>
-              <Spinner size="sm" className="text-white" />
-              <span>構成案生成中...</span>
-            </>
-          ) : (
-            <span>構成案3パターンを生成</span>
-          )}
-        </button>
+      <div className="app-sticky-actions">
+        <div className="flex flex-wrap gap-3">
+          <button type="button" onClick={onBack} disabled={loading} className="app-btn-ghost">
+            戻る
+          </button>
+          <button type="button" onClick={onNext} disabled={loading} className="app-btn-primary">
+            {loading ? (
+              <>
+                <Spinner size="sm" className="text-white" />
+                <span>構成案生成中...</span>
+              </>
+            ) : (
+              <span>構成案3パターンを生成</span>
+            )}
+          </button>
+        </div>
       </div>
     </section>
   );

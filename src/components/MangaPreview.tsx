@@ -17,67 +17,80 @@ const downloadDataUrl = (dataUrl: string, filename: string) => {
 };
 
 export function MangaPreview({ result, generatedImageCount, onBack, onOpenRevise }: Props) {
-  const estimatedCost = (generatedImageCount * 0.15).toFixed(2);
+  const estimatedCost = (generatedImageCount * 0.039).toFixed(2);
 
   return (
-    <section className="app-panel p-6 sm:p-8">
-      <h2 className="text-lg font-semibold tracking-tight text-zinc-900 sm:text-xl">STEP4 漫画生成プレビュー</h2>
-      <p className="mt-2 text-sm leading-relaxed text-zinc-600">
-        4コマとA4縦1ページ漫画を確認し、必要なら修正再生成に進みます。
-      </p>
-
-      <p className="mt-4 inline-flex items-baseline gap-1.5 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs font-medium text-zinc-700">
-        <span className="text-zinc-400" aria-hidden>
-          ·
-        </span>
-        生成 {generatedImageCount} 枚 / 概算 {estimatedCost} USD
-      </p>
+    <section className="app-panel overflow-hidden p-6 sm:p-8">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-teal-700">Step 4</p>
+          <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">生成結果を確認</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
+            4コマとA4縦を確認し、ダウンロードするか、修正して再生成できます。
+          </p>
+        </div>
+        <p className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600">
+          生成 {generatedImageCount} 枚 / 概算 ${estimatedCost}
+        </p>
+      </div>
 
       <div className="mt-6 grid gap-5 lg:grid-cols-2">
-        <article className="rounded-lg border border-zinc-200 bg-zinc-50/30 p-4">
-          <h3 className="text-sm font-medium text-zinc-900 sm:text-base">4コマ（1080×1080）</h3>
-          <img
-            src={result.fourPanelImageDataUrl}
-            alt="4コマ漫画"
-            className="mt-3 w-full rounded-md border border-zinc-200 bg-white"
-          />
-          <button
-            type="button"
-            onClick={() => downloadDataUrl(result.fourPanelImageDataUrl, "manga-4panel.png")}
-            className="app-btn-primary mt-3 w-full min-h-10 sm:w-auto"
-          >
-            4コマをダウンロード
-          </button>
+        <article className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/40">
+          <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-4 py-3">
+            <h3 className="text-sm font-semibold text-slate-900">4コマ（正方形）</h3>
+            <span className="text-[11px] text-slate-500">1080×1080</span>
+          </div>
+          <div className="p-3">
+            <img
+              src={result.fourPanelImageDataUrl}
+              alt="4コマ漫画"
+              className="w-full rounded-xl border border-slate-200 bg-white"
+            />
+          </div>
+          <div className="border-t border-slate-200 px-4 py-3">
+            <button
+              type="button"
+              onClick={() => downloadDataUrl(result.fourPanelImageDataUrl, "manga-4panel.png")}
+              className="app-btn-primary w-full min-h-10"
+            >
+              4コマをダウンロード
+            </button>
+          </div>
         </article>
 
-        <article className="rounded-lg border border-zinc-200 bg-zinc-50/30 p-4">
-          <h3 className="text-sm font-medium text-zinc-900 sm:text-base">A4 縦1ページ（2480×3508）</h3>
-          <img
-            src={result.a4ImageDataUrl}
-            alt="A4縦1ページ漫画"
-            className="mt-3 w-full rounded-md border border-zinc-200 bg-white"
-          />
-          <button
-            type="button"
-            onClick={() => downloadDataUrl(result.a4ImageDataUrl, "manga-a4.png")}
-            className="app-btn-primary mt-3 w-full min-h-10 sm:w-auto"
-          >
-            A4をダウンロード
-          </button>
+        <article className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/40">
+          <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-4 py-3">
+            <h3 className="text-sm font-semibold text-slate-900">A4 縦1ページ</h3>
+            <span className="text-[11px] text-slate-500">2480×3508</span>
+          </div>
+          <div className="p-3">
+            <img
+              src={result.a4ImageDataUrl}
+              alt="A4縦1ページ漫画"
+              className="w-full rounded-xl border border-slate-200 bg-white"
+            />
+          </div>
+          <div className="border-t border-slate-200 px-4 py-3">
+            <button
+              type="button"
+              onClick={() => downloadDataUrl(result.a4ImageDataUrl, "manga-a4.png")}
+              className="app-btn-primary w-full min-h-10"
+            >
+              A4をダウンロード
+            </button>
+          </div>
         </article>
       </div>
 
-      <div className="mt-6 flex flex-wrap gap-3">
-        <button type="button" onClick={onBack} className="app-btn-ghost min-h-10">
-          STEP3へ戻る
-        </button>
-        <button
-          type="button"
-          onClick={onOpenRevise}
-          className="app-btn-primary min-h-10"
-        >
-          修正して再生成へ
-        </button>
+      <div className="app-sticky-actions">
+        <div className="flex flex-wrap gap-3">
+          <button type="button" onClick={onBack} className="app-btn-ghost">
+            構成案に戻る
+          </button>
+          <button type="button" onClick={onOpenRevise} className="app-btn-primary">
+            修正して再生成へ
+          </button>
+        </div>
       </div>
     </section>
   );

@@ -444,22 +444,25 @@ export function RevisePanel({
   };
 
   return (
-    <section className="app-panel p-6 sm:p-8">
-      <h2 className="text-lg font-semibold tracking-tight text-zinc-900 sm:text-xl">STEP5 修正再生成</h2>
-      <p className="mt-2 text-sm leading-relaxed text-zinc-600">
-        テキスト指示に加えて、画像上のポイント/範囲指定で複数箇所をまとめて編集できます。
-      </p>
+    <section className="app-panel overflow-hidden p-6 sm:p-8">
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wider text-teal-700">Step 5</p>
+        <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">修正して再生成</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
+          テキスト指示に加えて、画像上のポイント/範囲指定で複数箇所をまとめて編集できます。
+        </p>
+      </div>
 
-      <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50/80 p-3">
-        <p className="text-xs font-medium text-zinc-800">編集モード</p>
+      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+        <p className="text-xs font-medium text-slate-800">編集モード</p>
         <div className="mt-2 flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => setEditMode("global_rewrite")}
-            className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
+            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
               editMode === "global_rewrite"
-                ? "border-zinc-900 bg-zinc-100 text-zinc-900"
-                : "border-zinc-200 bg-white text-zinc-700"
+                ? "border-teal-700 bg-teal-50 text-teal-900"
+                : "border-slate-200 bg-white text-slate-700"
             }`}
           >
             通常再生成
@@ -467,10 +470,10 @@ export function RevisePanel({
           <button
             type="button"
             onClick={() => setEditMode("masked_inpaint")}
-            className={`rounded-lg border px-3 py-1 text-xs font-semibold ${
+            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
               editMode === "masked_inpaint"
-                ? "border-zinc-900 bg-zinc-100 text-zinc-900"
-                : "border-zinc-200 bg-white text-zinc-700"
+                ? "border-teal-700 bg-teal-50 text-teal-900"
+                : "border-slate-200 bg-white text-slate-700"
             }`}
           >
             高精度部分編集（マスク）
