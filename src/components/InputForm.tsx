@@ -94,13 +94,13 @@ export function InputForm({
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
           <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-          {referenceLoading ? (
+          {referenceLoading || !ownerReferenceDataUrl ? (
             <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-slate-100">
               <Spinner size="sm" className="text-slate-400" />
             </div>
           ) : (
             <img
-              src="references/owner.png"
+              src={ownerReferenceDataUrl}
               alt="店主参照"
               className="h-14 w-14 rounded-lg object-cover ring-1 ring-slate-200"
             />
@@ -112,13 +112,13 @@ export function InputForm({
           </div>
 
           <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-          {referenceLoading ? (
+          {referenceLoading || !wifeReferenceDataUrl ? (
             <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-slate-100">
               <Spinner size="sm" className="text-slate-400" />
             </div>
           ) : (
             <img
-              src="references/wife.png"
+              src={wifeReferenceDataUrl}
               alt="妻参照"
               className="h-14 w-14 rounded-lg object-cover ring-1 ring-slate-200"
             />

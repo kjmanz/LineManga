@@ -51,7 +51,18 @@ type Env = {
   GEMINI_API_KEY: string;
   GEMINI_TEXT_MODEL?: string;
   GEMINI_IMAGE_MODEL?: string;
+  OPENAI_API_KEY?: string;
   ALLOWED_ORIGINS?: string;
+};
+
+type OpenAiImageResponse = {
+  data?: Array<{
+    b64_json?: string;
+    url?: string;
+  }>;
+  error?: {
+    message?: string;
+  };
 };
 
 type GeminiPart = {
@@ -178,11 +189,16 @@ const API_ROOT = "https://generativelanguage.googleapis.com/v1beta";
 const API_BASE = `${API_ROOT}/models`;
 const FILE_API_BASE = `${API_ROOT}/files`;
 const FILE_UPLOAD_API = "https://generativelanguage.googleapis.com/upload/v1beta/files";
+const OPENAI_IMAGES_API = "https://api.openai.com/v1/images";
 const DEFAULT_TEXT_MODEL = "gemini-3-flash-preview";
 const DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-lite-image";
+const DEFAULT_OPENAI_IMAGE_MODEL = "gpt-image-2";
+const DEFAULT_OPENAI_IMAGE_QUALITY = "medium";
 const MODEL_LIST_CACHE_MS = 1000 * 60 * 10;
 const GEMINI_MAX_RETRIES = 3;
 const GEMINI_RETRY_BASE_DELAY_MS = 1200;
+const OPENAI_MAX_RETRIES = 3;
+const OPENAI_RETRY_BASE_DELAY_MS = 1200;
 const BATCH_POLL_INTERVAL_MS = 5000;
 const BATCH_PATTERNS_PER_JOB = 1;
 const BATCH_FILE_MIME_TYPE = "application/jsonl";
@@ -192,8 +208,17 @@ const IMAGE_MODEL_ALIASES: Record<string, string> = {
   "nano-banana-2-lite": DEFAULT_IMAGE_MODEL,
   "nano-banana-2": "gemini-3.1-flash-image-preview",
   "nano-banana-pro": "gemini-3-pro-image-preview",
-  "nano-banana": "gemini-3-pro-image-preview"
+  "nano-banana": "gemini-3-pro-image-preview",
+  "gpt-image-2": DEFAULT_OPENAI_IMAGE_MODEL
 };
+const OPENAI_IMAGE_MODELS = new Set([
+  "gpt-image-2",
+  "gpt-image-2-2026-04-21",
+  "gpt-image-1.5",
+  "gpt-image-1",
+  "gpt-image-1-mini",
+  "chatgpt-image-latest"
+]);
 const IMAGE_MODEL_PRIORITY = [
   DEFAULT_IMAGE_MODEL,
   "gemini-3.1-flash-image-preview",
@@ -660,6 +685,23 @@ const resolveImageModelAlias = (model: string) => {
   return IMAGE_MODEL_ALIASES[normalized.toLowerCase()] ?? normalized;
 };
 
+const isOpenAiImageModel = (model: string) =>
+  OPENAI_IMAGE_MODELS.has(normalizeModelId(model).toLowerCase());
+
+const resolvePreferredImageModel = (env: Env, preferredModel?: string) =>
+  resolveImageModelAlias(preferredModel ?? env.GEMINI_IMAGE_MODEL ?? DEFAULT_IMAGE_MODEL);
+
+const assertBatchSupportsImageModel = (modelId: string) => {
+  if (isOpenAiImageModel(modelId)) {
+    throw new Error(
+      "OpenAI画像モデルはBatch API未対応です。同期の /api/generate または /api/revise を使ってください。"
+    );
+  }
+};
+
+const resolveOpenAiImageSize = (layout: MangaLayout) =>
+  layout === "four-panel-square" ? "1024x1024" : "1024x1536";
+
 const wait = (ms: number) =>
   new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
@@ -973,9 +1015,194 @@ const buildMangaImageRequestBody = (parts: GeminiPart[]) =>
     }
   }) satisfies Record<string, unknown>;
 
+const dataUrlToBlob = (dataUrl: string) => {
+  const matched = dataUrl.match(/^data:(.+);base64,(.+)$/);
+  if (!matched) {
+    throw new Error("Data URL形式が不正です。");
+  }
+  const mimeType = matched[1];
+  const binary = atob(matched[2]);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new Blob([bytes], { type: mimeType });
+};
+
+const isRetryableOpenAiError = (status: number, message: string) =>
+  [408, 409, 425, 429, 500, 502, 503, 504].includes(status) ||
+  /rate limit|temporarily unavailable|overloaded|timeout|timed out|server error/i.test(message);
+
+const extractOpenAiImage = (response: OpenAiImageResponse) => {
+  const image = response.data?.find((item) => typeof item.b64_json === "string" && item.b64_json.length > 0);
+  if (!image?.b64_json) {
+    throw new Error("OpenAIから画像応答を取得できませんでした。");
+  }
+  return `data:image/png;base64,${image.b64_json}`;
+};
+
+const requestOpenAiImageGeneration = async ({
+  env,
+  model,
+  prompt,
+  size,
+  quality = DEFAULT_OPENAI_IMAGE_QUALITY
+}: {
+  env: Env;
+  model: string;
+  prompt: string;
+  size: string;
+  quality?: string;
+}) => {
+  if (!env.OPENAI_API_KEY) {
+    throw new Error("Cloudflare Worker secret `OPENAI_API_KEY` が未設定です。");
+  }
+
+  for (let attempt = 0; attempt <= OPENAI_MAX_RETRIES; attempt += 1) {
+    const response = await fetch(`${OPENAI_IMAGES_API}/generations`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        prompt,
+        size,
+        quality,
+        n: 1,
+        output_format: "png"
+      })
+    });
+    const data = (await response.json()) as OpenAiImageResponse;
+    if (response.ok) {
+      return extractOpenAiImage(data);
+    }
+
+    const message = data.error?.message?.trim() || `OpenAI API呼び出しに失敗しました。(${response.status})`;
+    const canRetry = attempt < OPENAI_MAX_RETRIES && isRetryableOpenAiError(response.status, message);
+    if (!canRetry) {
+      throw new Error(message);
+    }
+    await wait(OPENAI_RETRY_BASE_DELAY_MS * 2 ** attempt);
+  }
+
+  throw new Error("OpenAI API呼び出しに失敗しました。");
+};
+
+const requestOpenAiImageEdit = async ({
+  env,
+  model,
+  prompt,
+  size,
+  quality = DEFAULT_OPENAI_IMAGE_QUALITY,
+  imageDataUrls,
+  maskImageDataUrl
+}: {
+  env: Env;
+  model: string;
+  prompt: string;
+  size: string;
+  quality?: string;
+  imageDataUrls: string[];
+  maskImageDataUrl?: string;
+}) => {
+  if (!env.OPENAI_API_KEY) {
+    throw new Error("Cloudflare Worker secret `OPENAI_API_KEY` が未設定です。");
+  }
+  if (imageDataUrls.length === 0) {
+    throw new Error("OpenAI画像編集には入力画像が必要です。");
+  }
+
+  for (let attempt = 0; attempt <= OPENAI_MAX_RETRIES; attempt += 1) {
+    const form = new FormData();
+    form.append("model", model);
+    form.append("prompt", prompt);
+    form.append("size", size);
+    form.append("quality", quality);
+    form.append("n", "1");
+    form.append("output_format", "png");
+
+    imageDataUrls.forEach((dataUrl, index) => {
+      form.append("image[]", dataUrlToBlob(dataUrl), `input-${index + 1}.png`);
+    });
+
+    if (maskImageDataUrl) {
+      form.append("mask", dataUrlToBlob(maskImageDataUrl), "mask.png");
+    }
+
+    const response = await fetch(`${OPENAI_IMAGES_API}/edits`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.OPENAI_API_KEY}`
+      },
+      body: form
+    });
+    const data = (await response.json()) as OpenAiImageResponse;
+    if (response.ok) {
+      return extractOpenAiImage(data);
+    }
+
+    const message = data.error?.message?.trim() || `OpenAI API呼び出しに失敗しました。(${response.status})`;
+    const canRetry = attempt < OPENAI_MAX_RETRIES && isRetryableOpenAiError(response.status, message);
+    if (!canRetry) {
+      throw new Error(message);
+    }
+    await wait(OPENAI_RETRY_BASE_DELAY_MS * 2 ** attempt);
+  }
+
+  throw new Error("OpenAI API呼び出しに失敗しました。");
+};
+
+const generateMangaImageWithOpenAi = async ({
+  env,
+  model,
+  prompt,
+  layout,
+  referenceDataUrls = [],
+  previousImageDataUrl,
+  maskImageDataUrl,
+  editMode = "global_rewrite"
+}: {
+  env: Env;
+  model: string;
+  prompt: string;
+  layout: MangaLayout;
+  referenceDataUrls?: string[];
+  previousImageDataUrl?: string;
+  maskImageDataUrl?: string;
+  editMode?: ImageEditMode;
+}) => {
+  const size = resolveOpenAiImageSize(layout);
+  const inputImages = [
+    ...(previousImageDataUrl ? [previousImageDataUrl] : []),
+    ...referenceDataUrls
+  ].slice(0, 16);
+
+  if (inputImages.length > 0) {
+    return requestOpenAiImageEdit({
+      env,
+      model,
+      prompt,
+      size,
+      imageDataUrls: inputImages,
+      maskImageDataUrl: editMode === "masked_inpaint" ? maskImageDataUrl : undefined
+    });
+  }
+
+  return requestOpenAiImageGeneration({
+    env,
+    model,
+    prompt,
+    size
+  });
+};
+
 const generateMangaImage = async ({
   env,
   prompt,
+  layout = "four-panel-square",
+  imageModel,
   referenceDataUrls = [],
   previousImageDataUrl,
   maskImageDataUrl,
@@ -983,11 +1210,27 @@ const generateMangaImage = async ({
 }: {
   env: Env;
   prompt: string;
+  layout?: MangaLayout;
+  imageModel?: string;
   referenceDataUrls?: string[];
   previousImageDataUrl?: string;
   maskImageDataUrl?: string;
   editMode?: ImageEditMode;
 }) => {
+  const resolvedModel = resolvePreferredImageModel(env, imageModel);
+  if (isOpenAiImageModel(resolvedModel)) {
+    return generateMangaImageWithOpenAi({
+      env,
+      model: resolvedModel,
+      prompt,
+      layout,
+      referenceDataUrls,
+      previousImageDataUrl,
+      maskImageDataUrl,
+      editMode
+    });
+  }
+
   const parts = buildMangaImageParts({
     prompt,
     referenceDataUrls,
@@ -996,7 +1239,11 @@ const generateMangaImage = async ({
     editMode
   });
   const requestBody = buildMangaImageRequestBody(parts);
-  const response = await withImageModelFallback(env, (modelId) => requestGemini(env, modelId, requestBody));
+  const response = await withImageModelFallback(
+    env,
+    (modelId) => requestGemini(env, modelId, requestBody),
+    resolvedModel
+  );
   return extractImage(response);
 };
 
@@ -1474,19 +1721,26 @@ const toBatchFileRequest = (request: GeminiBatchInlinedRequest, index: number): 
 const createImageBatch = async ({
   env,
   requests,
-  displayName
+  displayName,
+  imageModel
 }: {
   env: Env;
   requests: GeminiBatchInlinedRequest[];
   displayName: string;
+  imageModel?: string;
 }) => {
+  const preferredModel = resolvePreferredImageModel(env, imageModel);
+  assertBatchSupportsImageModel(preferredModel);
+
   const fileRequests = requests.map(toBatchFileRequest);
   const jsonlContent = fileRequests.map((entry) => JSON.stringify(entry)).join("\n");
 
   try {
     const fileName = await uploadBatchInputFile(env, jsonlContent, displayName);
-    const operation = await withImageModelFallback(env, (modelId) =>
-      requestGeminiBatchGenerateWithFile(env, modelId, fileName, displayName)
+    const operation = await withImageModelFallback(
+      env,
+      (modelId) => requestGeminiBatchGenerateWithFile(env, modelId, fileName, displayName),
+      preferredModel
     );
     return operation.name as string;
   } catch (error) {
@@ -1495,8 +1749,10 @@ const createImageBatch = async ({
     console.warn(`Batch file input failed: ${message}`);
   }
 
-  const operation = await withImageModelFallback(env, (modelId) =>
-    requestGeminiBatchGenerateInline(env, modelId, requests, `${displayName}-inline`)
+  const operation = await withImageModelFallback(
+    env,
+    (modelId) => requestGeminiBatchGenerateInline(env, modelId, requests, `${displayName}-inline`),
+    preferredModel
   );
   return operation.name as string;
 };
@@ -1627,12 +1883,15 @@ const generate = async (request: Request, env: Env, origin: string | null) => {
   const body = (await request.json()) as {
     summary?: unknown;
     pattern?: unknown;
+    imageModel?: string;
     ownerReferenceDataUrl?: string;
     wifeReferenceDataUrl?: string;
   };
 
   const summary = normalizeSummary(body.summary);
   const pattern = normalizePatterns({ patterns: [body.pattern] })[0];
+  const imageModel =
+    typeof body.imageModel === "string" && body.imageModel.trim() ? body.imageModel.trim() : undefined;
   const referenceDataUrls = collectReferenceDataUrls(
     body.ownerReferenceDataUrl,
     body.wifeReferenceDataUrl
@@ -1647,11 +1906,15 @@ const generate = async (request: Request, env: Env, origin: string | null) => {
     generateMangaImage({
       env,
       prompt: fourPanelPrompt,
+      layout: "four-panel-square",
+      imageModel,
       referenceDataUrls
     }),
     generateMangaImage({
       env,
       prompt: a4Prompt,
+      layout: "a4-vertical",
+      imageModel,
       referenceDataUrls
     })
   ]);
@@ -1661,7 +1924,8 @@ const generate = async (request: Request, env: Env, origin: string | null) => {
       fourPanelImageDataUrl,
       a4ImageDataUrl,
       fourPanelPrompt,
-      a4Prompt
+      a4Prompt,
+      imageModel: resolvePreferredImageModel(env, imageModel)
     },
     200,
     origin
@@ -1672,6 +1936,7 @@ const revise = async (request: Request, env: Env, origin: string | null) => {
   const body = (await request.json()) as {
     summary?: unknown;
     pattern?: unknown;
+    imageModel?: string;
     revisionInstruction?: string;
     reviseTargets?: unknown;
     imageEdits?: unknown;
@@ -1698,6 +1963,8 @@ const revise = async (request: Request, env: Env, origin: string | null) => {
   const maskFeatherPx = normalizeMaskFeather(body.maskFeatherPx);
   const fourPanelMaskImageDataUrl = normalizeImageDataUrl(body.fourPanelMaskImageDataUrl);
   const a4MaskImageDataUrl = normalizeImageDataUrl(body.a4MaskImageDataUrl);
+  const imageModel =
+    typeof body.imageModel === "string" && body.imageModel.trim() ? body.imageModel.trim() : undefined;
   if (!revisionInstruction && imageEdits.length === 0) {
     return badRequest("修正指示または編集ポイントを入力してください。", origin);
   }
@@ -1740,6 +2007,8 @@ const revise = async (request: Request, env: Env, origin: string | null) => {
       generateMangaImage({
         env,
         prompt: revisedFourPanelPrompt,
+        layout: "four-panel-square",
+        imageModel,
         referenceDataUrls,
         previousImageDataUrl: body.previousFourPanelImageDataUrl,
         maskImageDataUrl: shouldReviseFourPanel ? fourPanelMaskImageDataUrl : undefined,
@@ -1756,6 +2025,8 @@ const revise = async (request: Request, env: Env, origin: string | null) => {
       generateMangaImage({
         env,
         prompt: revisedA4Prompt,
+        layout: "a4-vertical",
+        imageModel,
         referenceDataUrls,
         previousImageDataUrl: body.previousA4ImageDataUrl,
         maskImageDataUrl: shouldReviseA4 ? a4MaskImageDataUrl : undefined,
@@ -1778,6 +2049,7 @@ const revise = async (request: Request, env: Env, origin: string | null) => {
       a4ImageDataUrl,
       fourPanelPrompt,
       a4Prompt,
+      imageModel: resolvePreferredImageModel(env, imageModel),
       revisedLayouts: reviseTargets
     },
     200,
@@ -1789,12 +2061,15 @@ const batchGenerate = async (request: Request, env: Env, origin: string | null) 
   const body = (await request.json()) as {
     summary?: unknown;
     pattern?: unknown;
+    imageModel?: string;
     ownerReferenceDataUrl?: string;
     wifeReferenceDataUrl?: string;
   };
 
   const summary = normalizeSummary(body.summary);
   const pattern = normalizePatterns({ patterns: [body.pattern] })[0];
+  const imageModel =
+    typeof body.imageModel === "string" && body.imageModel.trim() ? body.imageModel.trim() : undefined;
   const referenceDataUrls = collectReferenceDataUrls(
     body.ownerReferenceDataUrl,
     body.wifeReferenceDataUrl
@@ -1822,6 +2097,7 @@ const batchGenerate = async (request: Request, env: Env, origin: string | null) 
   const batchName = await createImageBatch({
     env,
     requests,
+    imageModel,
     displayName: `line-manga-generate-${Date.now()}`
   });
 
@@ -1840,12 +2116,15 @@ const batchGenerateAll = async (request: Request, env: Env, origin: string | nul
   const body = (await request.json()) as {
     summary?: unknown;
     patterns?: unknown;
+    imageModel?: string;
     ownerReferenceDataUrl?: string;
     wifeReferenceDataUrl?: string;
   };
 
   const summary = normalizeSummary(body.summary);
   const patterns = normalizePatterns({ patterns: body.patterns });
+  const imageModel =
+    typeof body.imageModel === "string" && body.imageModel.trim() ? body.imageModel.trim() : undefined;
   const referenceDataUrls = collectReferenceDataUrls(
     body.ownerReferenceDataUrl,
     body.wifeReferenceDataUrl
@@ -1881,6 +2160,7 @@ const batchGenerateAll = async (request: Request, env: Env, origin: string | nul
       const batchName = await createImageBatch({
         env,
         requests,
+        imageModel,
         displayName: `line-manga-generate-all-${Date.now()}-${groupIndex + 1}`
       });
 
@@ -1911,6 +2191,7 @@ const batchRevise = async (request: Request, env: Env, origin: string | null) =>
   const body = (await request.json()) as {
     summary?: unknown;
     pattern?: unknown;
+    imageModel?: string;
     revisionInstruction?: string;
     reviseTargets?: unknown;
     imageEdits?: unknown;
@@ -1935,6 +2216,8 @@ const batchRevise = async (request: Request, env: Env, origin: string | null) =>
   const maskFeatherPx = normalizeMaskFeather(body.maskFeatherPx);
   const fourPanelMaskImageDataUrl = normalizeImageDataUrl(body.fourPanelMaskImageDataUrl);
   const a4MaskImageDataUrl = normalizeImageDataUrl(body.a4MaskImageDataUrl);
+  const imageModel =
+    typeof body.imageModel === "string" && body.imageModel.trim() ? body.imageModel.trim() : undefined;
   if (!revisionInstruction && imageEdits.length === 0) {
     return badRequest("修正指示または編集ポイントを入力してください。", origin);
   }
@@ -1997,6 +2280,7 @@ const batchRevise = async (request: Request, env: Env, origin: string | null) =>
   const batchName = await createImageBatch({
     env,
     requests,
+    imageModel,
     displayName: `line-manga-revise-${Date.now()}`
   });
 
