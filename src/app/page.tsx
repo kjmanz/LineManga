@@ -99,6 +99,7 @@ const AUTOSAVE_STORAGE_KEY = "line-manga-autosave";
 type AutosaveState = {
   step: number;
   postText: string;
+  hasSummary: boolean;
   summary: SummaryResult;
   patterns: CompositionPattern[];
   selectedPatternId: string | null;
@@ -202,6 +203,7 @@ async function postJson<T>(url: string, payload: unknown): Promise<T> {
 export default function Home() {
   const [step, setStep] = useState(1);
   const [postText, setPostText] = useState("");
+  const [hasSummary, setHasSummary] = useState(false);
   const [summary, setSummary] = useState<SummaryResult>(INITIAL_SUMMARY);
   const [patterns, setPatterns] = useState<CompositionPattern[]>([]);
   const [selectedPatternId, setSelectedPatternId] = useState<string | null>(null);
@@ -236,11 +238,11 @@ export default function Home() {
     if (patterns.length > 0) {
       return 3;
     }
-    if (summary.mainTheme.trim()) {
+    if (hasSummary) {
       return 2;
     }
     return 1;
-  }, [generation, generationByPatternId, patterns.length, summary.mainTheme]);
+  }, [generation, generationByPatternId, hasSummary, patterns.length]);
 
   const loadingCopy = useMemo(() => {
     if (loadingKind === "generate-all") {
@@ -283,6 +285,7 @@ export default function Home() {
     if (saved) {
       setStep(saved.step);
       setPostText(saved.postText);
+      setHasSummary(saved.hasSummary ?? saved.step >= 2);
       setSummary(saved.summary);
       setPatterns(saved.patterns);
       setSelectedPatternId(saved.selectedPatternId);
@@ -298,6 +301,7 @@ export default function Home() {
     saveAutosaveState({
       step,
       postText,
+      hasSummary,
       summary,
       patterns,
       selectedPatternId,
@@ -313,6 +317,7 @@ export default function Home() {
     generationByPatternId,
     patterns,
     postText,
+    hasSummary,
     revisedGeneration,
     selectedPatternId,
     step,
@@ -323,6 +328,7 @@ export default function Home() {
     clearAutosaveState();
     setStep(1);
     setPostText("");
+    setHasSummary(false);
     setSummary(INITIAL_SUMMARY);
     setPatterns([]);
     setSelectedPatternId(null);
@@ -390,6 +396,7 @@ export default function Home() {
         postText
       });
       setSummary(data.summary);
+      setHasSummary(true);
       setPatterns([]);
       setSelectedPatternId(null);
       setGeneration(null);
@@ -575,10 +582,18 @@ export default function Home() {
   return (
     <main className="min-h-screen px-4 py-6 pb-16 md:px-8 md:py-8">
       <div className="mx-auto max-w-5xl">
-        <header className="app-panel flex flex-col gap-5 p-5 sm:p-7 lg:flex-row lg:items-start lg:justify-between">
+        <header className="app-panel flex flex-col gap-5 p-5 sm:p-7 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0 flex-1">
-            <div className="inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1 text-[11px] font-semibold tracking-wide text-teal-800 ring-1 ring-teal-100">
-              LINE Manga Studio
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1 text-[11px] font-semibold tracking-wide text-teal-800 ring-1 ring-teal-100">
+                LINE Manga Studio
+              </div>
+              {autosaveLoaded && postText ? (
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-500" role="status">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
+                  入力内容は自動保存されます
+                </span>
+              ) : null}
             </div>
             <h1 className="text-balance mt-3 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
               LINE投稿 漫画化エージェント
@@ -650,12 +665,15 @@ export default function Home() {
             </div>
           ) : null}
           {!isApiBaseConfigured ? (
-            <p className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-              <code className="rounded bg-amber-100/80 px-1.5 py-0.5 font-mono text-[0.85em] text-amber-950">
-                NEXT_PUBLIC_API_BASE_URL
-              </code>
-              <span>が未設定です。Cloudflare Worker の URL を設定してください。</span>
-            </p>
+            <div className="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="status">
+              <span aria-hidden>⚠</span>
+              <div>
+                <p className="font-medium">生成サービスに接続されていません</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-amber-800">
+                  管理者向け設定「NEXT_PUBLIC_API_BASE_URL」を確認してください。
+                </p>
+              </div>
+            </div>
           ) : null}
         </div>
 
@@ -669,6 +687,11 @@ export default function Home() {
               referenceError={referenceError}
               loading={loading}
               onPostTextChange={setPostText}
+              onUseExample={() =>
+                setPostText(
+                  "エアコンの効きが悪いと感じたら、設定温度を下げる前にフィルターを確認してみてください。ほこりが詰まると冷房効率が落ち、電気代が高くなることもあります。掃除しても改善しないときは、無理をせず当店へご相談ください。"
+                )
+              }
               onSubmit={handleSummarize}
             />
           ) : null}

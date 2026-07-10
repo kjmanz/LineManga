@@ -10,6 +10,7 @@ type Props = {
   referenceError: string | null;
   loading: boolean;
   onPostTextChange: (value: string) => void;
+  onUseExample: () => void;
   onSubmit: () => void;
 };
 
@@ -21,11 +22,20 @@ export function InputForm({
   referenceError,
   loading,
   onPostTextChange,
+  onUseExample,
   onSubmit
 }: Props) {
+  const minimumCharacters = 10;
   const hasReferences = Boolean(ownerReferenceDataUrl && wifeReferenceDataUrl);
   const charCount = postText.trim().length;
-  const canSubmit = !loading && !referenceLoading && hasReferences && charCount > 0;
+  const canSubmit = !loading && !referenceLoading && hasReferences && charCount >= minimumCharacters;
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter" && canSubmit) {
+      event.preventDefault();
+      onSubmit();
+    }
+  };
 
   return (
     <section className="app-panel overflow-hidden p-6 sm:p-8">
@@ -42,18 +52,48 @@ export function InputForm({
         </p>
       </div>
 
-      <label className="mt-5 block">
-        <span className="sr-only">LINE投稿文</span>
+      <div className="mt-5">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm font-medium text-slate-800">
+          <label htmlFor="post-text">LINE投稿文</label>
+          <button
+            type="button"
+            onClick={onUseExample}
+            disabled={loading}
+            className="text-xs font-medium text-teal-700 underline-offset-4 hover:underline disabled:opacity-50"
+          >
+            入力例を使う
+          </button>
+        </div>
         <textarea
+          id="post-text"
           className="app-textarea h-56 resize-y"
           placeholder="例: エアコンの効きが悪いとき、設定温度より先にフィルター掃除を..."
           value={postText}
           onChange={(event) => onPostTextChange(event.target.value)}
+          onKeyDown={handleKeyDown}
+          autoFocus
+          aria-describedby="post-input-help"
         />
-      </label>
+      </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+      <div id="post-input-help" className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <p className={charCount > 0 && charCount < minimumCharacters ? "text-amber-700" : "text-slate-500"}>
+          {charCount > 0 && charCount < minimumCharacters
+            ? `あと ${minimumCharacters - charCount} 文字入力してください`
+            : "内容・困りごと・伝えたい行動があると、構成の精度が上がります"}
+        </p>
+        <p className="font-medium tabular-nums text-slate-500">Ctrl / ⌘ + Enter で次へ</p>
+      </div>
+
+      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <p className="text-xs font-medium text-slate-700">登場人物</p>
+          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${hasReferences ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>
+            {referenceLoading ? "読み込み中" : hasReferences ? "準備完了" : "確認が必要"}
+          </span>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
           {referenceLoading ? (
             <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-slate-100">
               <Spinner size="sm" className="text-slate-400" />
@@ -69,9 +109,9 @@ export function InputForm({
             <p className="text-sm font-medium text-slate-800">店主</p>
             <p className="text-xs text-slate-500">参照画像（固定）</p>
           </div>
-        </div>
+          </div>
 
-        <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+          <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
           {referenceLoading ? (
             <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-slate-100">
               <Spinner size="sm" className="text-slate-400" />
@@ -87,6 +127,7 @@ export function InputForm({
             <p className="text-sm font-medium text-slate-800">妻</p>
             <p className="text-xs text-slate-500">参照画像（固定）</p>
           </div>
+          </div>
         </div>
       </div>
 
@@ -101,11 +142,13 @@ export function InputForm({
           <p className="text-xs text-slate-500">
             {charCount === 0
               ? "投稿文を入力すると次へ進めます"
+              : charCount < minimumCharacters
+                ? `${minimumCharacters}文字以上入力してください`
               : !hasReferences
                 ? "参照画像の読み込み完了をお待ちください"
                 : "準備OK。要点抽出へ進めます"}
           </p>
-          <button type="button" onClick={onSubmit} disabled={!canSubmit} className="app-btn-primary w-full sm:w-auto">
+          <button type="button" onClick={onSubmit} disabled={!canSubmit} className="app-btn-primary w-full sm:min-w-48 sm:w-auto">
             {loading ? (
               <>
                 <Spinner size="sm" className="text-white" />

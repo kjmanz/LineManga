@@ -35,6 +35,8 @@ const removeListItem = (list: string[], index: number, onApply: (next: string[])
 };
 
 export function SummaryView({ summary, loading, onChange, onBack, onNext }: Props) {
+  const canProceed = Boolean(summary.mainTheme.trim() && summary.targetPersona.trim() && summary.solutionMessage.trim());
+
   return (
     <section className="app-panel overflow-hidden p-6 sm:p-8">
       <div>
@@ -159,7 +161,7 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
           <button type="button" onClick={onBack} disabled={loading} className="app-btn-ghost">
             戻る
           </button>
-          <button type="button" onClick={onNext} disabled={loading} className="app-btn-primary">
+          <button type="button" onClick={onNext} disabled={loading || !canProceed} className="app-btn-primary">
             {loading ? (
               <>
                 <Spinner size="sm" className="text-white" />
@@ -169,6 +171,9 @@ export function SummaryView({ summary, loading, onChange, onBack, onNext }: Prop
               <span>構成案3パターンを生成</span>
             )}
           </button>
+          {!canProceed ? (
+            <p className="basis-full text-xs text-amber-700">メインテーマ・想定読者・解決メッセージを入力してください。</p>
+          ) : null}
         </div>
       </div>
     </section>

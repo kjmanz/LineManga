@@ -17,6 +17,10 @@
   body {
     @apply font-sans antialiased text-slate-900;
   }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-teal-600 ring-offset-2 ring-offset-white;
+  }
 }
 
 @layer components {
@@ -38,13 +42,13 @@
 
   .app-btn-primary {
     @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm
-      transition hover:bg-slate-800
+      transition hover:-translate-y-px hover:bg-slate-800 hover:shadow-md active:translate-y-0
       disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none;
   }
 
   .app-btn-ghost {
     @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 shadow-sm
-      transition hover:border-slate-300 hover:bg-slate-50
+      transition hover:border-slate-300 hover:bg-slate-50 active:bg-slate-100
       disabled:cursor-not-allowed disabled:opacity-50;
   }
 
@@ -72,6 +76,22 @@ body {
   background:
     radial-gradient(ellipse 80% 50% at 50% -10%, rgba(15, 118, 110, 0.08), transparent 55%),
     linear-gradient(180deg, #f8fafc 0%, var(--app-bg) 40%, #eef2f7 100%);
+}
+
+::selection {
+  background: var(--app-accent-soft);
+  color: var(--app-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 * {
