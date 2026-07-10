@@ -41,6 +41,7 @@ export function PatternCards({
               key={pattern.id}
               type="button"
               onClick={() => onSelect(pattern.id)}
+              aria-pressed={selected}
               className={cn(
                 "rounded-2xl border p-4 text-left transition",
                 selected
@@ -72,7 +73,7 @@ export function PatternCards({
 
       <div className="app-sticky-actions">
         <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:flex-wrap">
             <button type="button" onClick={onBack} disabled={loading} className="app-btn-ghost">
               戻る
             </button>
@@ -80,7 +81,7 @@ export function PatternCards({
               type="button"
               onClick={onGenerate}
               disabled={loading || !selectedPatternId}
-              className="app-btn-primary"
+              className="app-btn-primary w-full sm:w-auto"
             >
               {loading ? (
                 <>
