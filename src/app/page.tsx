@@ -10,6 +10,7 @@ import { RevisePanel } from "@/components/RevisePanel";
 import { Stepper } from "@/components/Stepper";
 import { SummaryView } from "@/components/SummaryView";
 import { toUserFriendlyError } from "@/lib/errors";
+import { clearImagePayload, loadImagePayload, saveImagePayload } from "@/lib/imageStore";
 import {
   normalizeSummary,
   type CompositionPattern,
@@ -19,6 +20,11 @@ import {
   type ImageEditMode,
   type SummaryResult
 } from "@/lib/types";
+import {
+  DEFAULT_IMAGE_MODEL_ID,
+  isImageModelId,
+  type ImageModelId
+} from "@/lib/imageModels";
 
 type ApiError = {
   error?: string;
@@ -103,6 +109,7 @@ type AutosaveState = {
   summary: SummaryResult;
   patterns: CompositionPattern[];
   selectedPatternId: string | null;
+  imageModel: ImageModelId;
   generation: GenerationResult | null;
   generationByPatternId: PatternGenerationMap;
   revisedGeneration: GenerationResult | null;
@@ -166,7 +173,11 @@ const clearAutosaveState = () => {
   } catch {
     // ignore storage errors
   }
+  void clearImagePayload();
 };
+
+const hasImageData = (generation: GenerationResult | null | undefined) =>
+  Boolean(generation?.fourPanelImageDataUrl || generation?.a4ImageDataUrl);
 
 const blobToDataUrl = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
@@ -207,6 +218,7 @@ export default function Home() {
   const [summary, setSummary] = useState<SummaryResult>(INITIAL_SUMMARY);
   const [patterns, setPatterns] = useState<CompositionPattern[]>([]);
   const [selectedPatternId, setSelectedPatternId] = useState<string | null>(null);
+  const [imageModel, setImageModel] = useState<ImageModelId>(DEFAULT_IMAGE_MODEL_ID);
   const [generation, setGeneration] = useState<GenerationResult | null>(null);
   const [generationByPatternId, setGenerationByPatternId] = useState<PatternGenerationMap>({});
   const [revisedGeneration, setRevisedGeneration] = useState<GenerationResult | null>(null);
@@ -281,17 +293,57 @@ export default function Home() {
   };
 
   useEffect(() => {
-    const saved = loadAutosaveState();
-    if (saved) {
-      setStep(saved.step);
-      setPostText(saved.postText);
-      setHasSummary(saved.hasSummary ?? saved.step >= 2);
-      setSummary(saved.summary);
-      setPatterns(saved.patterns);
-      setSelectedPatternId(saved.selectedPatternId);
-      setGeneratedImageCount(saved.generatedImageCount);
-    }
-    setAutosaveLoaded(true);
+    let cancelled = false;
+
+    const restoreAutosave = async () => {
+      const saved = loadAutosaveState();
+      const images = await loadImagePayload();
+      if (cancelled) {
+        return;
+      }
+
+      if (saved) {
+        const restoredByPatternId = {
+          ...(saved.generationByPatternId ?? {}),
+          ...(images?.generationByPatternId ?? {})
+        };
+        const preferredId =
+          saved.selectedPatternId && restoredByPatternId[saved.selectedPatternId]
+            ? saved.selectedPatternId
+            : Object.keys(restoredByPatternId)[0] ?? saved.selectedPatternId;
+        const restoredGeneration =
+          (preferredId && hasImageData(restoredByPatternId[preferredId])
+            ? restoredByPatternId[preferredId]
+            : null) ??
+          (hasImageData(images?.generation) ? images?.generation ?? null : null) ??
+          saved.generation ??
+          null;
+        const restoredRevised =
+          (hasImageData(images?.revisedGeneration) ? images?.revisedGeneration ?? null : null) ??
+          saved.revisedGeneration ??
+          null;
+
+        setStep(saved.step);
+        setPostText(saved.postText);
+        setHasSummary(saved.hasSummary ?? saved.step >= 2);
+        setSummary(saved.summary);
+        setPatterns(saved.patterns);
+        setSelectedPatternId(preferredId);
+        setImageModel(isImageModelId(saved.imageModel) ? saved.imageModel : DEFAULT_IMAGE_MODEL_ID);
+        setGeneration(restoredGeneration);
+        setGenerationByPatternId(restoredByPatternId);
+        setRevisedGeneration(restoredRevised);
+        setGeneratedImageCount(saved.generatedImageCount);
+      }
+
+      setAutosaveLoaded(true);
+    };
+
+    void restoreAutosave();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -305,16 +357,23 @@ export default function Home() {
       summary,
       patterns,
       selectedPatternId,
+      imageModel,
       generation,
       generationByPatternId,
       revisedGeneration,
       generatedImageCount
+    });
+    void saveImagePayload({
+      generation,
+      generationByPatternId,
+      revisedGeneration
     });
   }, [
     autosaveLoaded,
     generatedImageCount,
     generation,
     generationByPatternId,
+    imageModel,
     patterns,
     postText,
     hasSummary,
@@ -332,6 +391,7 @@ export default function Home() {
     setSummary(INITIAL_SUMMARY);
     setPatterns([]);
     setSelectedPatternId(null);
+    setImageModel(DEFAULT_IMAGE_MODEL_ID);
     setGeneration(null);
     setGenerationByPatternId({});
     setRevisedGeneration(null);
@@ -446,6 +506,7 @@ export default function Home() {
       const generated = await postJson<GenerationResult>("/api/generate", {
         summary,
         pattern: selectedPattern,
+        imageModel,
         ownerReferenceDataUrl,
         wifeReferenceDataUrl
       });
@@ -479,6 +540,7 @@ export default function Home() {
         const generated = await postJson<GenerationResult>("/api/generate", {
           summary,
           pattern,
+          imageModel,
           ownerReferenceDataUrl,
           wifeReferenceDataUrl
         });
@@ -541,6 +603,7 @@ export default function Home() {
       const revised = await postJson<GenerationResult>("/api/revise", {
         summary,
         pattern: selectedPattern,
+        imageModel,
         ownerReferenceDataUrl,
         wifeReferenceDataUrl,
         revisionInstruction: normalizedInstruction,
@@ -710,8 +773,10 @@ export default function Home() {
             <PatternCards
               patterns={patterns}
               selectedPatternId={selectedPatternId}
+              imageModel={imageModel}
               loading={loading}
               onSelect={setSelectedPatternId}
+              onImageModelChange={setImageModel}
               onBack={() => setStep(2)}
               onGenerate={handleGenerate}
               onGenerateAll={handleGenerateAll}
@@ -749,6 +814,7 @@ export default function Home() {
           {step === 4 && generation ? (
             <MangaPreview
               result={generation}
+              imageModel={imageModel}
               generatedImageCount={generatedImageCount}
               onBack={() => setStep(3)}
               onOpenRevise={() => setStep(5)}

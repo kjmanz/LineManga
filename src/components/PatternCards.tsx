@@ -2,13 +2,19 @@
 
 import { Spinner } from "./Spinner";
 import type { CompositionPattern } from "@/lib/types";
+import {
+  IMAGE_MODEL_OPTIONS,
+  type ImageModelId
+} from "@/lib/imageModels";
 import { cn } from "@/lib/cn";
 
 type Props = {
   patterns: CompositionPattern[];
   selectedPatternId: string | null;
+  imageModel: ImageModelId;
   loading: boolean;
   onSelect: (patternId: string) => void;
+  onImageModelChange: (modelId: ImageModelId) => void;
   onBack: () => void;
   onGenerate: () => void;
   onGenerateAll: () => void;
@@ -17,12 +23,16 @@ type Props = {
 export function PatternCards({
   patterns,
   selectedPatternId,
+  imageModel,
   loading,
   onSelect,
+  onImageModelChange,
   onBack,
   onGenerate,
   onGenerateAll
 }: Props) {
+  const selectedModel = IMAGE_MODEL_OPTIONS.find((option) => option.id === imageModel);
+
   return (
     <section className="app-panel overflow-hidden p-6 sm:p-8">
       <div>
@@ -31,6 +41,37 @@ export function PatternCards({
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
           1つ選んで生成するか、3つまとめて一括生成できます。一括は時間がかかります。
         </p>
+      </div>
+
+      <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <label htmlFor="image-model" className="text-sm font-semibold text-slate-900">
+              画像生成モデル
+            </label>
+            <p className="mt-1 text-xs leading-relaxed text-slate-600">
+              生成品質と費用のバランスを選べます。修正再生成でも同じモデルを使います。
+            </p>
+          </div>
+          {selectedModel ? (
+            <p className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-600">
+              目安 ${selectedModel.estimatedCostPerImageUsd.toFixed(3)}/枚
+            </p>
+          ) : null}
+        </div>
+        <select
+          id="image-model"
+          value={imageModel}
+          disabled={loading}
+          onChange={(event) => onImageModelChange(event.target.value as ImageModelId)}
+          className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-600/15 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {IMAGE_MODEL_OPTIONS.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.label} — {option.description}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="mt-5 grid gap-3 md:grid-cols-3">

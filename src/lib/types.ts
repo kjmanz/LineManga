@@ -53,6 +53,7 @@ export type GenerationResult = {
   a4ImageDataUrl: string;
   fourPanelPrompt: string;
   a4Prompt: string;
+  imageModel?: string;
 };
 
 const sanitizeCtrTerm = (value: string) =>
