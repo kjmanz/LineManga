@@ -288,6 +288,8 @@ ${JSON.stringify(summary, null, 2)}
   3コマ目: 店主の解決策
   4コマ目: オチ
 - A4縦は4コマ形式を禁止し、1ページ漫画として「導入・共感・解決・締め」の順で設計する
+- 4コマとA4縦のどちらも、店主と妻だけの話にせず、夫婦とは別人のお客様を1〜2名登場させる
+- お客様は困りごとの当事者として会話や行動に参加させ、背景だけの人物にしない
 - CTAや連絡誘導文は入れない
 - セリフは短く、スマホ可読性を優先
 - 出力テキストで「CTR」という語を使わず、必ず「反応率」に言い換える
@@ -326,6 +328,24 @@ const panelText = (pattern: CompositionPattern) =>
 - セリフ: ${panel.dialogue}`
     )
     .join("\n");
+
+const stripFlowLabel = (value: string) =>
+  value
+    .replace(/^\s*(?:[①-④1-4]\s*[.:：)）-]?\s*)?(?:導入|共感|解決|締め|行動)\s*[.:：)）-]\s*/u, "")
+    .trim();
+
+const storyText = (pattern: CompositionPattern, layout: MangaLayout) => {
+  if (layout === "four-panel-square") {
+    return `4コマの内容（コマ番号・「シーン」「セリフ」は制作指示であり、画像内には表示しない）:
+${panelText(pattern)}`;
+  }
+
+  return `A4ストーリーの流れ（次の番号と段階名は制作指示であり、画像内には表示しない）:
+1. ${stripFlowLabel(pattern.a4Flow.intro)}
+2. ${stripFlowLabel(pattern.a4Flow.empathy)}
+3. ${stripFlowLabel(pattern.a4Flow.solution)}
+4. ${stripFlowLabel(pattern.a4Flow.action)}`;
+};
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
@@ -474,12 +494,17 @@ const imagePrompt = ({
   const sizeInstruction =
     layout === "four-panel-square"
       ? "1080x1080pxの正方形1枚に4コマをレイアウト。"
-      : "2480x3508pxのA4縦1枚。4コマ分割はせず、1ページ漫画として導入→共感→解決→行動の順で構成する。";
+      : "2480x3508pxのA4縦1枚。4コマ分割はせず、下記の内部ストーリー1→2→3→4の順で1ページ漫画を構成する。";
 
   const layoutInstruction =
     layout === "four-panel-square"
       ? "4コマは田の字または縦1列で読みやすく配置。"
       : "A4は4コマ枠(均等4分割)を使わず、メインビジュアル+吹き出し+補助カットで視線誘導を設計する。";
+
+  const customerInstruction =
+    layout === "four-panel-square"
+      ? "お客様を少なくとも2コマに大きく描き、夫婦とお客様が一緒に会話するコマを最低1つ作る。"
+      : "メインビジュアルに夫婦とお客様を一緒に大きく描き、お客様が相談または反応していることが伝わる構図にする。";
 
   const trimmedInstruction = sanitizeCtrTerm(revisionInstruction?.trim() ?? "");
   const isRevision = trimmedInstruction.length > 0 || imageEdits.length > 0;
@@ -504,7 +529,10 @@ style固定: cute chibi style, pop color, Japanese manga
 必須キャラクター:
 - 店主（きょうしんさん）: 電気工事・家電のプロ、親切で頼もしい
 - 妻: 明るく寄り添う
-- お客様: 50代以上を中心に1〜2名
+- お客様: 50代以上を中心に1〜2名。店主・妻とは別人の第三者
+- 完成画像には「店主＋妻＋お客様1〜2名」の最低3名を必ず登場させる。夫婦だけの構図は禁止
+- お客様を背景の小さなモブにせず、困りごとの当事者として表情・会話・行動をはっきり描く
+- ${customerInstruction}
 
 要約情報:
 - メインテーマ: ${summary.mainTheme}
@@ -515,18 +543,16 @@ style固定: cute chibi style, pop color, Japanese manga
 選択構成:
 - 切り口: ${pattern.patternType}
 - タイトル: ${pattern.title}
-- 4コマ:
-${panelText(pattern)}
-- A4流れ:
-  - 導入: ${pattern.a4Flow.intro}
-  - 共感: ${pattern.a4Flow.empathy}
-  - 解決: ${pattern.a4Flow.solution}
-  - 締め: ${pattern.a4Flow.action}
+${storyText(pattern, layout)}
 
 画像要件:
 - ${sizeInstruction}
 - ${layoutInstruction}
 - 日本語テキストを入れる。セリフは短く簡潔。
+- 「導入」「共感」「解決」「締め」「行動」や「シーン」「セリフ」は内部の構成ラベル。画像内の見出し・帯・注釈・説明欄として絶対に表示しない。
+- ①導入、②共感、③解決、④行動のような段階番号付き見出しも表示しない。構成の段階は人物の表情・行動・自然な会話だけで伝える。
+- 画像内に表示してよい文章は、タイトル、人物の自然なセリフ、投稿内容を伝えるために必要な短いキャプションだけ。
+- プロンプトの項目名や制作指示を紙面に転載しない。解説用のサイドバーや舞台裏の構成表も作らない。
 - CTA（LINE返信・電話相談・来店予約などの連絡誘導）は入れない。
 - 投稿内容から逸脱しない。
 - 画像内文字とセリフで「CTR」「ＣＴＲ」「ctr」を使わず、必ず「反応率」と表記する。
